@@ -39,7 +39,8 @@ const calendlyWebhookRoutes = require("./routes/calendlyWebhookRoutes");
 const animalRoutes = require('./routes/animal');
 const feedbackRoutes = require('./routes/feedbackRoutes');
  
-
+ 
+const paymentRoutes = require('./routes/paymentRoutes');
 
 
 const app = express();
@@ -247,6 +248,8 @@ app.use('/api/animal', animalRoutes);
 
 app.use('/api/feedback', feedbackRoutes);
 
+
+app.use('/api/payment', paymentRoutes);
 
 
 

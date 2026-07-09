@@ -1,9 +1,17 @@
+// In your routes file (e.g., feedbackRoutes.js)
 const express = require('express');
 const router = express.Router();
 const FeedbackController = require('../controllers/feedbackController');
 
-// Public routes (no auth needed)
-router.get('/:token', FeedbackController.getFeedbackForm);
-router.post('/', FeedbackController.submitFeedback);
+// Get feedback form data (for frontend to display)
+router.get('/feedback-form/:token', FeedbackController.getFeedbackForm);
+
+// Submit feedback
+router.post('/feedback-submit', FeedbackController.submitFeedback);
+
+// ✅ NEW: Check if user can view pricing
+router.get('/pricing-access/:bookingId', FeedbackController.checkPricingAccess);
+
+
 
 module.exports = router;
