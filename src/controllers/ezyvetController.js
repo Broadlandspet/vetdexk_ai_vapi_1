@@ -49,6 +49,80 @@ const APPOINTMENT_TYPE_NAME_MAP = {
 };
 
 
+// ─── HELPER: Normalize breed value ──────────────────────────────
+// const normalizeBreed = (breed) => {
+//     if (!breed) return null;
+//     const breedStr = String(breed).trim();
+//     // If it's "Unknown" or "unknown" or not a number, return null
+//     if (breedStr.toLowerCase() === 'unknown' || isNaN(breedStr)) {
+//         return null;
+//     }
+//     return breedStr;
+// };
+
+
+// ─── HELPER: Normalize breed value ──────────────────────────────
+// const normalizeBreed = (breed) => {
+//     if (!breed) return null;
+//     const breedStr = String(breed).trim();
+    
+//     // If it's "Unknown" or "unknown" → treat as null
+//     if (breedStr.toLowerCase() === 'unknown') {
+//         return null;
+//     }
+    
+//     // If it's not a number → treat as null
+//     if (isNaN(breedStr)) {
+//         return null;
+//     }
+    
+//     const breedNumber = parseInt(breedStr, 10);
+    
+//     // If it's 254 (or any specific invalid ID you want to skip) → treat as null
+//     if (breedNumber === 254) {
+//         return null;
+//     }
+    
+//     // Optional: If you want to validate against a list of valid breed IDs
+//     // const validBreedIds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 651]; // etc.
+//     // if (!validBreedIds.includes(breedNumber)) {
+//     //     return null;
+//     // }
+    
+//     return breedStr;
+// };
+
+
+// ─── HELPER: Normalize breed value ──────────────────────────────
+const normalizeBreed = (breed) => {
+    if (!breed) return null;
+    const breedStr = String(breed).trim();
+    
+    // If it's "Unknown" or "unknown" → treat as null
+    if (breedStr.toLowerCase() === 'unknown') {
+        return null;
+    }
+    
+    // If it's not a number → treat as null
+    if (isNaN(breedStr)) {
+        return null;
+    }
+    
+    const breedNumber = parseInt(breedStr, 10);
+    
+    // If it's 254 (invalid default) → treat as null
+    if (breedNumber === 254) {
+        return null;
+    }
+    
+    return breedStr;
+};
+
+
+
+
+
+
 
 
 // ─── CONTROLLER: GET FILTERED RESOURCES ───────────────────────────────
@@ -367,8 +441,6 @@ exports.getResourceAvailability = async (req, res) => {
 
 
 
-
-
 exports.createNewEntry = async (req, res) => {
     try {
         const {
@@ -391,15 +463,12 @@ exports.createNewEntry = async (req, res) => {
             });
         }
 
-        // Validate required fields
+        // Validate required fields (pet_breed is now optional)
         if (!owner_full_name) {
             return res.status(400).json({ success: false, error: 'owner_full_name is required' });
         }
         if (!mobile_phone) {
             return res.status(400).json({ success: false, error: 'mobile_phone is required' });
-        }
-        if (!email_address) {
-            return res.status(400).json({ success: false, error: 'email_address is required' });
         }
         if (!pet_name) {
             return res.status(400).json({ success: false, error: 'pet_name is required' });
@@ -410,9 +479,33 @@ exports.createNewEntry = async (req, res) => {
         if (!pet_species) {
             return res.status(400).json({ success: false, error: 'pet_species is required (Dog, Cat, Bird, or Unknown)' });
         }
-        if (!pet_breed) {
-            return res.status(400).json({ success: false, error: 'pet_breed is required' });
-        }
+
+        // ─── HELPER: Normalize breed value ──────────────────────────────
+        const normalizeBreed = (breed) => {
+            if (!breed) return null;
+            const breedStr = String(breed).trim();
+            
+            // If it's "Unknown" or "unknown" → treat as null
+            if (breedStr.toLowerCase() === 'unknown') {
+                return null;
+            }
+            
+            // If it's not a number → treat as null
+            if (isNaN(breedStr)) {
+                return null;
+            }
+            
+            const breedNumber = parseInt(breedStr, 10);
+            
+            // ✅ NEW: If it's 254 (invalid default) → treat as null
+            if (breedNumber === 254) {
+                return null;
+            }
+            
+            return breedStr;
+        };
+
+        const normalizedBreed = normalizeBreed(pet_breed);
 
         // ─── MAP pet_sex (String → Numeric ID) ──────────────────────────
         const sexMapping = {
@@ -467,52 +560,48 @@ exports.createNewEntry = async (req, res) => {
             sex_id: sexId,
             animalcolour_id: pet_color || null,
             species_id: speciesId,
-            breed_id: pet_breed
+            breed_id: normalizedBreed ? parseInt(normalizedBreed, 10) : null   // ← 254 becomes null
         };
         const animalResult = await ezyvetService.createAnimal(hospitalId, animalData);
 
-        // 3. Save to local database (pet_owner and pets tables)
-       
+        // 3. Save to local database
+        const ownerDbData = {
+            name: owner_full_name,
+            phone: mobile_phone,
+            email: email_address || null,
+            ezy_vet_contact_id: contactResult.id,
+            ezyVetContactCode: contactResult.code
+        };
+        const petDbData = {
+            pet_name: pet_name,
+            sex: pet_sex,
+            species: pet_species,
+            breed: normalizedBreed,                    // ← 254 becomes null
+            ezy_vet_breed_id: normalizedBreed,         // ← 254 becomes null
+            ezy_vet_contact_id: contactResult.id,
+            ezyVetContactCode: contactResult.code,
+            ezy_vet_pet_code: animalResult.code,
+            ezy_vet_pet_id: animalResult.id
+        };
+        const savedData = await ezyvetService.saveOwnerAndPetToDb(hospitalId, ownerDbData, petDbData);
 
-
-        // 3. Save to local database (pet_owner and pets tables)
-const ownerDbData = {
-    name: owner_full_name,
-    phone: mobile_phone,
-    email: email_address,
-    ezy_vet_contact_id: contactResult.id,
-    ezyVetContactCode: contactResult.code
-};
-const petDbData = {
-    pet_name: pet_name,
-    sex: pet_sex,
-    species: pet_species,
-    breed: String(pet_breed),
-    ezy_vet_breed_id: String(pet_breed),
-    ezy_vet_contact_id: contactResult.id,
-    ezyVetContactCode: contactResult.code,
-    ezy_vet_pet_code: animalResult.code,
-    ezy_vet_pet_id: animalResult.id
-};
-const savedData = await ezyvetService.saveOwnerAndPetToDb(hospitalId, ownerDbData, petDbData); // 👈 CAPTURE RETURN VALUE
-
-// 4. Build structured response
-return res.status(200).json({
-    success: true,
-    data: {
-        hospital_id: hospitalId,                    // 👈 NEW
-        pet_owner_id: savedData.ownerId,            // 👈 NEW (local pet_owner ID)
-        pet_id: savedData.petId,                    // 👈 NEW (local pets ID)
-        contact_id: contactResult.id,
-        owner_name: owner_full_name,
-        mobile_phone: mobile_phone,
-        email_address: email_address,
-        ezyVetContactCode: contactResult.code,
-        pet_name: animalResult.name,
-        pet_code: animalResult.code,
-        ezy_vet_pet_id: animalResult.id
-    }
-});
+        // 4. Build structured response
+        return res.status(200).json({
+            success: true,
+            data: {
+                hospital_id: hospitalId,
+                pet_owner_id: savedData.ownerId,
+                pet_id: savedData.petId,
+                contact_id: contactResult.id,
+                owner_name: owner_full_name,
+                mobile_phone: mobile_phone,
+                email_address: email_address,
+                ezyVetContactCode: contactResult.code,
+                pet_name: animalResult.name,
+                pet_code: animalResult.code,
+                ezy_vet_pet_id: animalResult.id
+            }
+        });
 
     } catch (error) {
         logger.error(`Error in createNewEntry: ${error.message}`);
@@ -523,7 +612,10 @@ return res.status(200).json({
     }
 };
 
+
+
 // ─── NEW: CREATE PET (ANIMAL) AND LINK TO EXISTING CONTACT ────────────
+
 
 
 
@@ -532,7 +624,7 @@ exports.createPet = async (req, res) => {
         const {
             hospital_id,
             contact_id,
-            pet_owner_id,        // 👈 NEW
+            pet_owner_id,
             pet_name,
             pet_sex,
             pet_species,
@@ -548,7 +640,7 @@ exports.createPet = async (req, res) => {
             });
         }
 
-        // Validate required fields
+        // Validate required fields (pet_breed is now optional)
         if (!contact_id) {
             return res.status(400).json({ success: false, error: 'contact_id is required' });
         }
@@ -564,9 +656,9 @@ exports.createPet = async (req, res) => {
         if (!pet_species) {
             return res.status(400).json({ success: false, error: 'pet_species is required (Dog, Cat, Bird, or Unknown)' });
         }
-        if (!pet_breed) {
-            return res.status(400).json({ success: false, error: 'pet_breed is required' });
-        }
+
+        // ✅ NORMALIZE BREED HERE – 254 becomes null
+        const normalizedBreed = normalizeBreed(pet_breed);
 
         // ─── MAP pet_sex (String → Numeric ID) ──────────────────────────
         const sexMapping = {
@@ -601,26 +693,24 @@ exports.createPet = async (req, res) => {
         }
 
         // ─── 1. Create animal in ezyVet ──────────────────────────────────
+        // ✅ USE normalizedBreed – 254 becomes null
         const animalData = {
             contact_id: parseInt(contact_id, 10),
             name: pet_name,
             sex_id: sexId,
             animalcolour_id: pet_color || null,
             species_id: speciesId,
-            breed_id: parseInt(pet_breed, 10)
+            breed_id: normalizedBreed ? parseInt(normalizedBreed, 10) : null   // ← 254 → null!
         };
         const animalResult = await ezyvetService.createAnimal(hospitalId, animalData);
 
-        // ─── 2. Save pet to local DB using provided pet_owner_id ──────────
-    
-
-
+        // ─── 2. Save pet to local DB ─────────────────────────────────────
         const petDbData = {
             pet_name: pet_name,
             sex: pet_sex,
             species: pet_species,
-            breed: String(pet_breed),
-            ezy_vet_breed_id: String(pet_breed),
+            breed: normalizedBreed,                      // ← 254 → null
+            ezy_vet_breed_id: normalizedBreed,           // ← 254 → null
             ezy_vet_contact_id: String(contact_id),
             ezyVetContactCode: null,
             ezy_vet_pet_code: animalResult.code,
@@ -628,7 +718,7 @@ exports.createPet = async (req, res) => {
         };
         await ezyvetService.savePetToDb(hospitalId, parseInt(pet_owner_id, 10), petDbData);
 
-        // ─── 3. Build structured response ────────────────────────────────
+        // ─── 3. Build response ──────────────────────────────────────────
         return res.status(200).json({
             success: true,
             data: {
@@ -648,6 +738,9 @@ exports.createPet = async (req, res) => {
         });
     }
 };
+
+
+
 
 // ─── NEW: BOOK APPOINTMENT ─────────────────────────────────────────────
 
@@ -1018,6 +1111,264 @@ exports.getAppointmentsByPhone = async (req, res) => {
         });
     } catch (error) {
         logger.error(`Error in getAppointmentsByPhone: ${error.message}`);
+        return res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+};
+
+
+
+
+/**
+ * POST /api/ezyvet/resources/availabilityslots
+ * Fetches availability for all three hardcoded doctors for given dates
+ * Checks BOTH ezyVet AND local database for conflicts
+ */
+// exports.allAvailabilitySlots = async (req, res) => {
+//     try {
+//         const { hospital_id, dates, duration, resource_id } = req.body;
+
+//         const hospitalId = parseInt(hospital_id, 10);
+//         if (!hospitalId) {
+//             return res.status(400).json({
+//                 success: false,
+//                 error: 'Missing hospital_id in request body'
+//             });
+//         }
+
+//         if (!dates || !Array.isArray(dates) || dates.length === 0) {
+//             return res.status(400).json({
+//                 success: false,
+//                 error: 'dates array is required (e.g., ["2026-07-09"])'
+//             });
+//         }
+
+//         // Validate each date format
+//         const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+//         for (const d of dates) {
+//             if (!dateRegex.test(d)) {
+//                 return res.status(400).json({
+//                     success: false,
+//                     error: `Invalid date format: ${d}. Use YYYY-MM-DD`
+//                 });
+//             }
+//         }
+
+//         const dur = parseInt(duration, 10) || 30;
+        
+//         // Optional resource_id for filtering conflicts
+//         const resourceId = resource_id ? parseInt(resource_id, 10) : null;
+
+//         // Call service to get all doctors' availability (with local DB check)
+//         const data = await ezyvetService.getAvailabilityForAllDoctors(hospitalId, dates, dur, resourceId);
+
+//         return res.status(200).json({
+//             success: true,
+//             data
+//         });
+//     } catch (error) {
+//         logger.error(`Error in allAvailabilitySlots: ${error.message}`);
+//         return res.status(500).json({
+//             success: false,
+//             error: error.message
+//         });
+//     }
+// };
+
+
+
+exports.allAvailabilitySlots = async (req, res) => {
+    try {
+        const { hospital_id, dates, duration, resource_id } = req.body;
+
+        const hospitalId = parseInt(hospital_id, 10);
+        if (!hospitalId) {
+            return res.status(400).json({
+                success: false,
+                error: 'Missing hospital_id in request body'
+            });
+        }
+
+        // ─── NEW: Accept dates as string OR array ──────────────────────
+        let dateList;
+        if (typeof dates === 'string') {
+            // If single string, convert to array
+            dateList = [dates];
+        } else if (Array.isArray(dates) && dates.length > 0) {
+            // If array, use as is
+            dateList = dates;
+        } else {
+            return res.status(400).json({
+                success: false,
+                error: 'dates is required as a string (e.g., "2026-07-09") or array (e.g., ["2026-07-09"])'
+            });
+        }
+
+        // Validate each date format
+        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+        for (const d of dateList) {
+            if (!dateRegex.test(d)) {
+                return res.status(400).json({
+                    success: false,
+                    error: `Invalid date format: ${d}. Use YYYY-MM-DD`
+                });
+            }
+        }
+
+        const dur = parseInt(duration, 10) || 30;
+        
+        // Optional resource_id for filtering conflicts
+        const resourceId = resource_id ? parseInt(resource_id, 10) : null;
+
+        // Call service to get all doctors' availability (with local DB check)
+        const data = await ezyvetService.getAvailabilityForAllDoctors(
+            hospitalId, 
+            dateList,  // ← Use normalized dateList
+            dur, 
+            resourceId
+        );
+
+        return res.status(200).json({
+            success: true,
+            data
+        });
+    } catch (error) {
+        logger.error(`Error in allAvailabilitySlots: ${error.message}`);
+        return res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+};
+
+
+
+
+/**
+ * POST /api/ezyvet/resources/availabilityslots/instant
+ * Returns the FIRST doctor that has available slots for the given date(s)
+ * Checks BOTH ezyVet AND local database for conflicts
+ */
+// exports.instantAvailabilitySlots = async (req, res) => {
+//     try {
+//         const { hospital_id, dates, duration, resource_id } = req.body;
+
+//         const hospitalId = parseInt(hospital_id, 10);
+//         if (!hospitalId) {
+//             return res.status(400).json({
+//                 success: false,
+//                 error: 'Missing hospital_id in request body'
+//             });
+//         }
+
+//         if (!dates || !Array.isArray(dates) || dates.length === 0) {
+//             return res.status(400).json({
+//                 success: false,
+//                 error: 'dates array is required (e.g., ["2026-07-09"])'
+//             });
+//         }
+
+//         // Validate each date format
+//         const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+//         for (const d of dates) {
+//             if (!dateRegex.test(d)) {
+//                 return res.status(400).json({
+//                     success: false,
+//                     error: `Invalid date format: ${d}. Use YYYY-MM-DD`
+//                 });
+//             }
+//         }
+
+//         const dur = parseInt(duration, 10) || 30;
+        
+//         // Optional resource_id for filtering conflicts
+//         const resourceId = resource_id ? parseInt(resource_id, 10) : null;
+
+//         // Call service to get first available doctor with slots
+//         const data = await ezyvetService.fetchInstantAvailabilitySlots(
+//             hospitalId, 
+//             dates, 
+//             dur, 
+//             resourceId
+//         );
+
+//         return res.status(200).json({
+//             success: true,
+//             data
+//         });
+//     } catch (error) {
+//         logger.error(`Error in instantAvailabilitySlots: ${error.message}`);
+//         return res.status(500).json({
+//             success: false,
+//             error: error.message
+//         });
+//     }
+// };
+
+
+
+
+
+
+exports.instantAvailabilitySlots = async (req, res) => {
+    try {
+        const { hospital_id, dates, duration, resource_id } = req.body;
+
+        const hospitalId = parseInt(hospital_id, 10);
+        if (!hospitalId) {
+            return res.status(400).json({
+                success: false,
+                error: 'Missing hospital_id in request body'
+            });
+        }
+
+        // ─── NEW: Accept dates as string OR array ──────────────────────
+        let dateList;
+        if (typeof dates === 'string') {
+            // If single string, convert to array
+            dateList = [dates];
+        } else if (Array.isArray(dates) && dates.length > 0) {
+            // If array, use as is
+            dateList = dates;
+        } else {
+            return res.status(400).json({
+                success: false,
+                error: 'dates is required as a string (e.g., "2026-07-09") or array (e.g., ["2026-07-09"])'
+            });
+        }
+
+        // Validate each date format
+        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+        for (const d of dateList) {
+            if (!dateRegex.test(d)) {
+                return res.status(400).json({
+                    success: false,
+                    error: `Invalid date format: ${d}. Use YYYY-MM-DD`
+                });
+            }
+        }
+
+        const dur = parseInt(duration, 10) || 30;
+        
+        // Optional resource_id for filtering conflicts
+        const resourceId = resource_id ? parseInt(resource_id, 10) : null;
+
+        // Call service to get first available doctor with slots
+        const data = await ezyvetService.fetchInstantAvailabilitySlots(
+            hospitalId, 
+            dateList,  // ← Use normalized dateList
+            dur, 
+            resourceId
+        );
+
+        return res.status(200).json({
+            success: true,
+            data
+        });
+    } catch (error) {
+        logger.error(`Error in instantAvailabilitySlots: ${error.message}`);
         return res.status(500).json({
             success: false,
             error: error.message

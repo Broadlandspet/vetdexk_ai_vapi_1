@@ -88,4 +88,16 @@ router.post('/appointments/lookup', apiKeyAuth, ezyvetController.getAppointments
 
 
 
+// POST /api/ezyvet/resources/availabilityslots
+// Get availability slots for all three doctors (with local DB check)
+router.post('/resources/availabilityslots', apiKeyAuth, ezyvetController.allAvailabilitySlots);
+
+
+
+
+
+// POST /api/ezyvet/resources/availabilityslots/instant
+// Get first available doctor with slots
+router.post('/resources/availabilityslots/instant', apiKeyAuth, ezyvetController.instantAvailabilitySlots);
+
 module.exports = router;

@@ -2138,46 +2138,46 @@ exports._checkWorkingHours = async (args) => {
 // ============================================
 // HANDLE FUNCTION CALL API
 // ============================================
-// exports.handleFunctionCallAPI = async (req, res) => {
-//   const { function: functionName, parameters, toolCallId } = req.body;
-//   console.log(`\n🔧 VAPI FUNCTION API CALL: ${functionName}`);
+exports.handleFunctionCallAPI = async (req, res) => {
+  const { function: functionName, parameters, toolCallId } = req.body;
+  console.log(`\n🔧 VAPI FUNCTION API CALL: ${functionName}`);
 
-//   try {
-//     let result;
-//     switch (functionName) {
-//       case 'check_working_hours':
-//         result = await exports._checkWorkingHours(parameters);
-//         break;
-//       case 'get_available_slots':
-//         result = await exports._getAvailableSlots(parameters);
-//         break;
-//       case 'find_patient_by_phone':
-//         result = await exports._findPatientByPhone(parameters);
-//         break;
-//       default:
-//         return res.status(200).json({
-//           results: [{ toolCallId: toolCallId || req.body.id || 'unknown', error: `Unknown function: ${functionName}` }]
-//         });
-//     }
+  try {
+    let result;
+    switch (functionName) {
+      case 'check_working_hours':
+        result = await exports._checkWorkingHours(parameters);
+        break;
+      case 'get_available_slots':
+        result = await exports._getAvailableSlots(parameters);
+        break;
+      case 'find_patient_by_phone':
+        result = await exports._findPatientByPhone(parameters);
+        break;
+      default:
+        return res.status(200).json({
+          results: [{ toolCallId: toolCallId || req.body.id || 'unknown', error: `Unknown function: ${functionName}` }]
+        });
+    }
 
-//     let resultString;
-//     if (functionName === 'check_working_hours' && result && typeof result === 'object') {
-//       const hours = result;
-//       resultString = Object.entries(hours).map(([day, data]) => {
-//         if (data.closed) return `${day}: Closed`;
-//         return `${day}: ${data.open}-${data.close}`;
-//       }).join(", ");
-//     } else {
-//       resultString = typeof result === 'string' ? result : JSON.stringify(result);
-//     }
+    let resultString;
+    if (functionName === 'check_working_hours' && result && typeof result === 'object') {
+      const hours = result;
+      resultString = Object.entries(hours).map(([day, data]) => {
+        if (data.closed) return `${day}: Closed`;
+        return `${day}: ${data.open}-${data.close}`;
+      }).join(", ");
+    } else {
+      resultString = typeof result === 'string' ? result : JSON.stringify(result);
+    }
 
-//     return res.status(200).json({
-//       results: [{ toolCallId: toolCallId || req.body.id || 'unknown', result: resultString }]
-//     });
-//   } catch (error) {
-//     console.error(`Function error: ${error.message}`);
-//     return res.status(200).json({
-//       results: [{ toolCallId: req.body.toolCallId || req.body.id || 'unknown', error: error.message }]
-//     });
-//   }
-// };
+    return res.status(200).json({
+      results: [{ toolCallId: toolCallId || req.body.id || 'unknown', result: resultString }]
+    });
+  } catch (error) {
+    console.error(`Function error: ${error.message}`);
+    return res.status(200).json({
+      results: [{ toolCallId: req.body.toolCallId || req.body.id || 'unknown', error: error.message }]
+    });
+  }
+};
