@@ -42,6 +42,8 @@ const feedbackRoutes = require('./routes/feedbackRoutes');
  
 const paymentRoutes = require('./routes/paymentRoutes');
 
+const callerQueryRoutes = require('./routes/callerQueryRoutes');
+
 
 const app = express();
 
@@ -250,6 +252,10 @@ app.use('/api/feedback', feedbackRoutes);
 
 
 app.use('/api/payment', paymentRoutes);
+
+
+
+app.use('/api/caller-query', callerQueryRoutes);
 
 
 
