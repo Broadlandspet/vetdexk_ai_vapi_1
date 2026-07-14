@@ -706,55 +706,166 @@ static async updateBookingStatus(id, status) {
     }
 }
 
-    // ✅ FIXED: Get all bookings - Returns ARRAY directly
-   static async getAllBookings() {
+   
+//    static async getAllBookings() {
+
+//     try {
+//         const result = await executeQuery(
+//             `SELECT 
+//                 id,
+//                 full_name,
+//                 email,
+//                 hospital_name,
+//                 hospital_address,
+//                 hospital_email,
+//                 hospital_phone,
+//                 status,
+//                 payment_status,
+//                 notes,
+//                 staff_notes,
+//                 calendly_event_uri,
+//                 calendly_invitee_uri,
+//                 scheduled_at,
+//                 meeting_url,
+//                 feedback_sent,
+//                 feedback_sent_at,
+//                 feedback_received,
+//                 feedback_received_at,
+//                 created_at,
+//                 updated_at
+//             FROM book_demo 
+//             ORDER BY 
+//                 CASE 
+//                     WHEN status = 'new' THEN 1
+//                     WHEN status = 'scheduled' THEN 2
+//                     WHEN status = 'contacted' THEN 3
+//                     WHEN status = 'completed' THEN 4
+//                     WHEN status = 'payment_completed' THEN 5
+//                     ELSE 6
+//                 END,
+//                 created_at DESC
+//             `
+//         );
+//         return result.rows || [];
+//     } catch (error) {
+//         logger.error('Error fetching bookings:', error);
+//         return [];
+//     }
+// }
+
+    // Get booking by ID
+ // Update getBookingById to include payment_status
+
+// services/bookDemoService.js
+
+static async getAllBookings() {
     try {
         const result = await executeQuery(
             `SELECT 
-                id,
-                full_name,
-                email,
-                hospital_name,
-                hospital_address,
-                hospital_email,
-                hospital_phone,
-                status,
-                payment_status,
-                notes,
-                staff_notes,
-                calendly_event_uri,
-                calendly_invitee_uri,
-                scheduled_at,
-                meeting_url,
-                feedback_sent,
-                feedback_sent_at,
-                feedback_received,
-                feedback_received_at,
-                created_at,
-                updated_at
-            FROM book_demo 
+                bd.id,
+                bd.full_name,
+                bd.email,
+                bd.hospital_name,
+                bd.hospital_address,
+                bd.hospital_email,
+                bd.hospital_phone,
+                bd.status,
+                bd.payment_status,
+                bd.notes,
+                bd.staff_notes,
+                bd.calendly_event_uri,
+                bd.calendly_invitee_uri,
+                bd.scheduled_at,
+                bd.meeting_url,
+                bd.feedback_sent,
+                bd.feedback_sent_at,
+                bd.feedback_received,
+                bd.feedback_received_at,
+                bd.created_at,
+                bd.updated_at,
+                df.id as feedback_id,
+                df.rating,
+                df.would_recommend,
+                df.interested_in_service,
+                df.feedback_text,
+                df.additional_comments,
+                df.submitted_at as feedback_submitted_at
+            FROM book_demo bd
+            LEFT JOIN demo_feedback df ON bd.id = df.booking_id
             ORDER BY 
                 CASE 
-                    WHEN status = 'new' THEN 1
-                    WHEN status = 'scheduled' THEN 2
-                    WHEN status = 'contacted' THEN 3
-                    WHEN status = 'completed' THEN 4
-                    WHEN status = 'payment_completed' THEN 5
+                    WHEN bd.status = 'new' THEN 1
+                    WHEN bd.status = 'scheduled' THEN 2
+                    WHEN bd.status = 'contacted' THEN 3
+                    WHEN bd.status = 'completed' THEN 4
+                    WHEN bd.status = 'payment_completed' THEN 5
                     ELSE 6
                 END,
-                created_at DESC
+                bd.created_at DESC
             `
         );
-        return result.rows || [];
+        
+        // Group feedbacks by booking_id
+        const bookingsMap = new Map();
+        
+        result.rows.forEach(row => {
+            const bookingId = row.id;
+            
+            if (!bookingsMap.has(bookingId)) {
+                bookingsMap.set(bookingId, {
+                    id: row.id,
+                    full_name: row.full_name,
+                    email: row.email,
+                    hospital_name: row.hospital_name,
+                    hospital_address: row.hospital_address,
+                    hospital_email: row.hospital_email,
+                    hospital_phone: row.hospital_phone,
+                    status: row.status,
+                    payment_status: row.payment_status,
+                    notes: row.notes,
+                    staff_notes: row.staff_notes,
+                    calendly_event_uri: row.calendly_event_uri,
+                    calendly_invitee_uri: row.calendly_invitee_uri,
+                    scheduled_at: row.scheduled_at,
+                    meeting_url: row.meeting_url,
+                    feedback_sent: row.feedback_sent,
+                    feedback_sent_at: row.feedback_sent_at,
+                    feedback_received: row.feedback_received,
+                    feedback_received_at: row.feedback_received_at,
+                    created_at: row.created_at,
+                    updated_at: row.updated_at,
+                    feedbacks: []
+                });
+            }
+            
+            // If feedback exists, add it to the feedbacks array
+            if (row.feedback_id !== null) {
+                bookingsMap.get(bookingId).feedbacks.push({
+                    id: row.feedback_id,
+                    rating: row.rating,
+                    would_recommend: row.would_recommend,
+                    interested_in_service: row.interested_in_service,
+                    feedback_text: row.feedback_text,
+                    additional_comments: row.additional_comments,
+                    submitted_at: row.feedback_submitted_at
+                });
+            }
+        });
+        
+        // Convert map to array
+        const bookings = Array.from(bookingsMap.values());
+        
+        return bookings;
+        
     } catch (error) {
         logger.error('Error fetching bookings:', error);
         return [];
     }
 }
 
-    // Get booking by ID
- // Update getBookingById to include payment_status
-static async getBookingById(id) {
+
+
+ static async getBookingById(id) {
     try {
         const result = await executeQuery(
             `SELECT 

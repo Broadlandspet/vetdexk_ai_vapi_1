@@ -45,6 +45,19 @@ const {
 
 } = require('../controllers/adminController');
 
+
+
+
+
+
+const callerQueryController = require('../controllers/callerQueryController');
+
+
+
+
+
+
+
 const router = express.Router();
 
 // ==================== PUBLIC ROUTES (NO AUTH) ====================
@@ -156,6 +169,48 @@ router.get('/email-logs/stats', getEmailLogsStats);
 // ==================== EMAIL CONFIG ROUTES ====================
 router.get('/email-config', getEmailConfig);
 router.post('/email-config', updateEmailConfig);
+
+
+
+
+
+
+
+///////-----caller query-------------///////////
+
+
+
+// // POST /api/caller-query – Save a query
+// router.post('/', callerQueryController.createCallerQuery);   // ← Fixed: createCallerQuery
+
+// // GET /api/caller-query – Get all queries (with filters)
+// router.get('/', callerQueryController.getCallerQueries);
+
+// // GET /api/caller-query/:id – Get a specific query
+// router.get('/:id', callerQueryController.getCallerQueryById);
+
+// // DELETE /api/caller-query/:id – Delete a query
+// router.delete('/:id', callerQueryController.deleteCallerQuery);
+
+
+
+
+
+// ==================== CALLER QUERY ROUTES ====================
+
+// Create a new query
+router.post('/caller-query', callerQueryController.createCallerQuery);
+
+// Get all queries (supports ?hospital_id, ?phone, ?email, ?startDate, ?endDate)
+router.get('/caller-query', callerQueryController.getCallerQueries);
+
+// Get a single query by ID
+router.get('/caller-query/:id', callerQueryController.getCallerQueryById);
+
+// Delete a query by ID
+router.delete('/caller-query/:id', callerQueryController.deleteCallerQuery);
+
+
 
 
 

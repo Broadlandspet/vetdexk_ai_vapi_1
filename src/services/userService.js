@@ -7,21 +7,48 @@ class UserService {
 
     // // Create a new user
 
-    static async createUser(userData) {
+
+
+static async createUser(userData) {
     try {
-        // Validate role
-        const allowedRoles = ['admin', 'viewer', 'superadmin'];
+        // Validate required fields
+        if (!userData.name) {
+            throw new Error('Name is required');
+        }
+        if (!userData.email) {
+            throw new Error('Email is required');
+        }
+        if (!userData.username) {
+            throw new Error('Username is required');
+        }
+        if (!userData.password) {
+            throw new Error('Password is required');
+        }
+        if (!userData.mobile_number) {
+            throw new Error('Mobile number is required');
+        }
  
-        if (!allowedRoles.includes(userData.role)) {
-            throw new Error(
-                'Invalid role. Allowed roles are admin, viewer, and superadmin.'
-            );
+        // ✅ Set default role to 'admin' if not provided
+        const role = userData.role || 'admin';
+ 
+        // Validate role
+        const allowedRoles = ['superadmin', 'admin', 'user', 'viewer'];
+        if (!allowedRoles.includes(role)) {
+            throw new Error('Invalid role. Allowed roles are superadmin, admin, user, and viewer.');
+        }
+ 
+        // Validate registration status
+        const allowedStatuses = ['pending', 'approved', 'rejected'];
+        const registrationStatus = userData.registration_status || 'pending';
+        if (!allowedStatuses.includes(registrationStatus)) {
+            throw new Error('Invalid registration status. Allowed statuses are pending, approved, and rejected.');
         }
  
         // Hash password
         const saltRounds = 10;
         const passwordHash = await bcrypt.hash(userData.password, saltRounds);
  
+        // ✅ Insert user with all fields - role is now properly defined
         const result = await executeQuery(
             `
             INSERT INTO users (
@@ -29,50 +56,115 @@ class UserService {
                 email,
                 username,
                 role,
-                hospital_id,
+                password_hash,
+                is_active,
                 mobile_number,
                 dob,
-                password_hash,
                 registration_status,
-                is_active
+                hospital_id,
+                demo_request_id,
+                plan_id,
+                plan_name,
+                plan_price,
+                plan_currency,
+                plan_interval,
+                plan_status,
+                payment_status,
+                registration_source,
+                created_at,
+                updated_at
             )
-            VALUES (
-                $1, $2, $3, $4, $5,
-                $6, $7, $8, $9, $10
-            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NOW(), NOW())
             RETURNING
                 id,
                 name,
                 email,
                 username,
                 role,
-                hospital_id,
+                is_active,
                 mobile_number,
                 dob,
                 registration_status,
-                is_active,
-                created_at
+                hospital_id,
+                demo_request_id,
+                plan_id,
+                plan_name,
+                plan_price,
+                plan_currency,
+                plan_interval,
+                plan_status,
+                payment_status,
+                registration_source,
+                created_at,
+                updated_at
             `,
             [
                 userData.name.trim(),
                 userData.email.trim().toLowerCase(),
                 userData.username.trim(),
-                userData.role,
-                userData.hospital_id,
-                userData.mobile_number.trim(),
-                userData.dob,
+                role, // ✅ Now properly defined as 'admin' by default
                 passwordHash,
-                'pending',
-                false
+                false, // is_active: false until approved
+                userData.mobile_number.trim(),
+                userData.dob || null,
+                registrationStatus,
+                null, // hospital_id: null until assigned
+                userData.demo_request_id || null,
+                userData.plan_id || null,
+                userData.plan_name || null,
+                userData.plan_price || null,
+                userData.plan_currency || '$',
+                userData.plan_interval || 'month',
+                'pending', // plan_status
+                'completed', // payment_status: payment already done
+                userData.source || 'demo_feedback_payment'
             ]
         );
  
-        logger.info(`User created: ${userData.email}`);
+        const newUser = result.rows[0];
  
-        return result.rows[0];
+        // Update book_demo with user reference
+        if (userData.demo_request_id) {
+            await executeQuery(
+                `UPDATE book_demo
+                 SET
+                   payment_status = 'completed',
+                   status = 'registered',
+                   updated_at = NOW()
+                 WHERE id = $1`,
+                [userData.demo_request_id]
+            );
+            logger.info(`Updated demo request ${userData.demo_request_id} with payment status`);
+        }
+ 
+        // ✅ Log registration (using console/logger instead of audit_logs)
+        logger.info(`User created successfully: ${userData.email} (ID: ${newUser.id})`, {
+            name: userData.name,
+            email: userData.email,
+            username: userData.username,
+            role: role,
+            mobile_number: userData.mobile_number,
+            plan_name: userData.plan_name || null,
+            plan_price: userData.plan_price || null,
+            demo_request_id: userData.demo_request_id || null,
+            registration_status: registrationStatus,
+            source: userData.source || 'demo_feedback_payment'
+        });
+ 
+        return newUser;
  
     } catch (error) {
         logger.error('Error creating user:', error);
+       
+        // Handle duplicate key violations
+        if (error.code === '23505') {
+            if (error.constraint === 'users_email_key') {
+                throw new Error('Email already exists');
+            } else if (error.constraint === 'users_username_key') {
+                throw new Error('Username already exists');
+            }
+        }
+       
         throw error;
     }
 }

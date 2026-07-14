@@ -7,48 +7,6 @@ const { executeQuery } = require('../config/database'); // for hospital fetch
 
 class AuthController {
 
-    // // Register new user
-    // static async register(req, res) {
-    //     try {
-    //         const { name, email, username, password, role } = req.body;
-
-    //         if (!name || !email || !username || !password) {
-    //             return res.status(400).json({
-    //                 success: false,
-    //                 error: 'Name, email, username, and password are required'
-    //             });
-    //         }
-
-    //         const user = await UserService.createUser({
-    //             name,
-    //             email,
-    //             username,
-    //             password,
-    //             role: role || 'user'
-    //         });
-
-    //         res.json({
-    //             success: true,
-    //             data: user,
-    //             message: 'User registered successfully'
-    //         });
-
-    //     } catch (error) {
-    //         logger.error('Error in register:', error);
-
-    //         if (error.code === '23505') {
-    //             return res.status(400).json({
-    //                 success: false,
-    //                 error: 'Email or username already exists'
-    //             });
-    //         }
-
-    //         res.status(500).json({
-    //             success: false,
-    //             error: 'Failed to register user'
-    //         });
-    //     }
-    // }
 
     // // Login user
     static async login(req, res) {
@@ -144,79 +102,144 @@ class AuthController {
 
 
 
-    static async register(req, res) {
-    try {
-        const {
-            name,
-            email,
-            username,
-            password,
-            hospital_id,
-            mobile_number,
-            dob,
-            role
-        } = req.body;
+static async register(req, res) {
+        try {
+            const {
+                name,
+                email,
+                username,
+                password,
+                mobile_number,
+                role = 'admin',
+                plan_id,
+                plan_name,
+                plan_price,
+                plan_currency,
+                plan_interval,
+                demo_request_id,
+                source = 'demo_feedback_payment'
+            } = req.body;
  
-        // Required field validation
-        if (
-            !name ||
-            !email ||
-            !username ||
-            !password ||
-            !hospital_id ||
-            !mobile_number ||
-            !dob ||
-            !role
-        ) {
-            return res.status(400).json({
+            // Validate required fields
+            if (!name) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Name is required'
+                });
+            }
+ 
+            if (!email) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Email is required'
+                });
+            }
+ 
+            if (!username) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Username is required'
+                });
+            }
+ 
+            if (!password) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Password is required'
+                });
+            }
+ 
+            if (!mobile_number) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Mobile number is required'
+                });
+            }
+ 
+            // Validate email format
+            const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailPattern.test(email)) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Invalid email format'
+                });
+            }
+ 
+            // Validate mobile number format (minimum 10 digits)
+           // Validate phone
+            const phonePattern = /^[0-9+\-\s()]{7,20}$/;
+            if (!phonePattern.test(hospitalPhone)) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Invalid phone number'
+                });
+            }
+ 
+            // Validate role
+            const allowedRoles = ['admin', 'viewer', 'user'];
+            if (role && !allowedRoles.includes(role)) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Invalid role. Allowed roles are admin, viewer, and user'
+                });
+            }
+ 
+            // Create user with pending status
+            const user = await UserService.createUser({
+                name,
+                email,
+                username,
+                password,
+                mobile_number: mobile_number.trim(),
+                role: role || 'admin',
+                plan_id,
+                plan_name,
+                plan_price,
+                plan_currency,
+                plan_interval,
+                demo_request_id,
+                registration_status: 'pending',
+                is_active: false,
+                source: source
+            });
+ 
+            res.json({
+                success: true,
+                data: user,
+                message: 'Registration submitted successfully. Awaiting Super Admin approval.'
+            });
+ 
+        } catch (error) {
+            logger.error('Error in register:', error);
+ 
+            // Handle specific errors
+            if (error.message === 'Email already exists') {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Email already exists. Please use a different email.'
+                });
+            }
+ 
+            if (error.message === 'Username already exists') {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Username already exists. Please choose a different username.'
+                });
+            }
+ 
+            if (error.message === 'Mobile number is required') {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Mobile number is required'
+                });
+            }
+ 
+            res.status(500).json({
                 success: false,
-                error: 'Name, email, username, password, role, hospital, mobile number and DOB are required.'
+                error: error.message || 'Failed to register user'
             });
         }
- 
-        // Validate role
-        const allowedRoles = ['admin', 'viewer', 'superadmin'];
- 
-        if (!allowedRoles.includes(role)) {
-            return res.status(400).json({
-                success: false,
-                error: 'Invalid role. Allowed roles are admin, viewer, and superadmin.'
-            });
-        }
- 
-        const user = await UserService.createUser({
-            name,
-            email,
-            username,
-            password,
-            hospital_id,
-            mobile_number,
-            dob,
-            role
-        });
- 
-        return res.status(201).json({
-            success: true,
-            data: user,
-            message: 'Registration submitted successfully. Please wait for Super Admin approval.'
-        });
- 
-    } catch (error) {
-        logger.error('Error in register:', error);
- 
-        if (error.code === '23505') {
-            return res.status(400).json({
-                success: false,
-                error: 'Email or username already exists.'
-            });
-        }
- 
-        return res.status(500).json({
-            success: false,
-            error: 'Failed to register user.'
-        });
     }
-}
  
 // Get active hospitals for registration
 static async getRegistrationHospitals(req, res) {

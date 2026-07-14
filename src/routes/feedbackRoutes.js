@@ -13,5 +13,7 @@ router.post('/feedback-submit', FeedbackController.submitFeedback);
 router.get('/pricing-access/:bookingId', FeedbackController.checkPricingAccess);
 
 
+router.get('/booking-details/:bookingId', FeedbackController.getBookingDetails);
+
 
 module.exports = router;
