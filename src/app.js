@@ -45,6 +45,9 @@ const paymentRoutes = require('./routes/paymentRoutes');
 const callerQueryRoutes = require('./routes/callerQueryRoutes');
 
 
+const smsRoutes = require('./routes/sms');
+
+
 const app = express();
 
 // ============================================
@@ -205,6 +208,9 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/vapi', vapiRoutes);
 app.use('/api/admin', emailRoutes);
 
+app.use('/api/email', emailRoutes);
+
+
 // ============================================
 // NEW: APPOINTMENT SYSTEM ROUTES
 // ============================================
@@ -259,7 +265,7 @@ app.use('/api/caller-query', callerQueryRoutes);
 
 
 
-
+app.use('/api/sms', smsRoutes);
 
 
 // ============================================

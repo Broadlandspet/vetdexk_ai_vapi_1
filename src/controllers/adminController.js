@@ -35,39 +35,10 @@ function getHospitalId(req) {
 // ============================================
 
 // Get all calls (admin only)
-// exports.getAllCalls = async (req, res) => {
-//     try {
-//         const hospitalId = getHospitalId(req);
-//         if (!hospitalId) {
-//             return res.status(403).json({ success: false, error: 'No hospital associated with this admin' });
-//         }
 
-//         const result = await executeQuery(`
-//             SELECT c.*, 
-//                    jsonb_agg(DISTINCT t.*) FILTER (WHERE t.id IS NOT NULL) as transcriptions,
-//                    row_to_json(conv.*) as conversations
-//             FROM calls c
-//             LEFT JOIN transcriptions t ON t.call_id = c.id
-//             LEFT JOIN conversations conv ON conv.id = c.conversation_id
-//             WHERE c.hospital_id = $1
-//             GROUP BY c.id, conv.id
-//             ORDER BY c.created_at DESC
-//         `, [hospitalId]);
 
-//         res.json({
-//             success: true,
-//             data: result.rows || [],
-//             count: result.rows?.length || 0
-//         });
 
-//     } catch (error) {
-//         logger.error('Error fetching all calls:', error);
-//         res.status(500).json({
-//             success: false,
-//             error: 'Failed to fetch calls'
-//         });
-//     }
-// };
+
 
 exports.getAllCalls = async (req, res) => {
     try {
@@ -75,25 +46,94 @@ exports.getAllCalls = async (req, res) => {
         if (!hospitalId) {
             return res.status(403).json({ success: false, error: 'No hospital associated with this admin' });
         }
-
+ 
         const result = await executeQuery(`
-            SELECT c.*, 
-                   jsonb_agg(DISTINCT t.*) FILTER (WHERE t.id IS NOT NULL) as transcriptions,
-                   row_to_json(conv.*) as conversations
+            SELECT
+                cl.id as log_id,
+                c.id as call_id,
+                c.call_sid,
+                c.from_number,
+                c.to_number,
+                c.conversation_id,
+                c.call_status,
+                c.menu_digit,
+                c.direction,
+                c.created_at,
+                c.updated_at,
+                c.hospital_id,
+                -- Fields from ezy_vet_call_logs
+                cl.caller_name,
+                cl.pet_owner_id,
+                cl.appointment_id,
+                cl.call_duration,
+                cl.transcription,
+                cl.summary,
+                cl.recording_url,
+                cl.vapi_call_id,
+                -- Build transcriptions array (from call_logs)
+                CASE
+                    WHEN cl.transcription IS NOT NULL AND cl.transcription != '' THEN
+                        jsonb_build_array(
+                            jsonb_build_object(
+                                'id', cl.id || '-transcript',
+                                'call_id', cl.id,
+                                'created_at', cl.created_at,
+                                'updated_at', cl.updated_at,
+                                'hospital_id', cl.hospital_id,
+                                'recording_url', cl.recording_url,
+                                'transcription_text', cl.transcription,
+                                'recording_duration', cl.call_duration,
+                                'transcription_status', 'completed'
+                            )
+                        )
+                    ELSE '[]'::jsonb
+                END as transcriptions,
+                -- Build conversations object
+                jsonb_build_object(
+                    'id', c.conversation_id,
+                    'from_number', c.from_number,
+                    'to_number', c.to_number,
+                    'created_at', c.created_at,
+                    'updated_at', c.updated_at,
+                    'hospital_id', c.hospital_id
+                ) as conversations
             FROM ezy_vet_calls c
-            LEFT JOIN ezy_vet_transcriptions t ON t.call_id = c.id
-            LEFT JOIN ezy_vet_conversations conv ON conv.id = c.conversation_id
+            LEFT JOIN ezy_vet_call_logs cl ON cl.call_sid = c.call_sid
             WHERE c.hospital_id = $1
-            GROUP BY c.id, conv.id
             ORDER BY c.created_at DESC
         `, [hospitalId]);
-
+ 
+        // Format response to match frontend expectations
+        const formattedData = result.rows.map(row => ({
+            id: row.call_id,
+            call_sid: row.call_sid,
+            conversation_id: row.conversation_id,
+            call_status: row.call_status || 'completed',
+            menu_digit: row.menu_digit,
+            from_number: row.from_number,
+            to_number: row.to_number,
+            direction: row.direction || 'inbound',
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            hospital_id: row.hospital_id,
+            // Additional fields from call_logs
+            caller_name: row.caller_name,
+            call_duration: row.call_duration,
+            transcription: row.transcription,
+            summary: row.summary,
+            recording_url: row.recording_url,
+            vapi_call_id: row.vapi_call_id,
+            // Nested structures
+            transcriptions: row.transcriptions || [],
+            conversations: row.conversations || {}
+        }));
+ 
         res.json({
             success: true,
-            data: result.rows || [],
-            count: result.rows?.length || 0
+            data: formattedData,
+            count: formattedData.length || 0
         });
-
+ 
     } catch (error) {
         logger.error('Error fetching all calls:', error);
         res.status(500).json({
@@ -102,6 +142,14 @@ exports.getAllCalls = async (req, res) => {
         });
     }
 };
+
+
+
+
+
+
+
+
 
 
 // Get specific call by ID (admin only)
@@ -341,28 +389,125 @@ exports.getConversationByNumbers = async (req, res) => {
 
 
 
+
+
+
 exports.getAllTranscriptions = async (req, res) => {
     try {
         const hospitalId = getHospitalId(req);
         if (!hospitalId) {
-            return res.status(403).json({ success: false, error: 'No hospital associated with this admin' });
+            return res.status(403).json({
+                success: false,
+                error: 'No hospital associated with this admin'
+            });
         }
-
+ 
+        // Get pagination parameters
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 20;
+        const offset = (page - 1) * limit;
+        const search = req.query.search || '';
+ 
+        // Build WHERE clause
+        let whereClause = `WHERE cl.hospital_id = $1`;
+        let params = [hospitalId];
+        let paramIndex = 2;
+ 
+        if (search) {
+            whereClause += ` AND (cl.transcription ILIKE $${paramIndex} OR cl.caller_name ILIKE $${paramIndex})`;
+            params.push(`%${search}%`);
+            paramIndex++;
+        }
+ 
+        // Get total count
+        const countResult = await executeQuery(
+            `SELECT COUNT(*) as total FROM ezy_vet_call_logs cl ${whereClause}`,
+            params
+        );
+        const total = parseInt(countResult.rows[0]?.total || 0);
+ 
+        // Get transcriptions with call details from ezy_vet_calls
         const result = await executeQuery(`
-            SELECT t.*,
-                   row_to_json(c.*) as calls
-            FROM ezy_vet_transcriptions t
-            LEFT JOIN ezy_vet_calls c ON c.id = t.call_id
-            WHERE t.hospital_id = $1
-            ORDER BY t.created_at DESC
-        `, [hospitalId]);
-
+            SELECT
+                cl.id,
+                cl.call_sid,
+                cl.caller_phone as from_number,
+                cl.caller_name,
+                cl.call_duration as recording_duration,
+                cl.transcription as transcription_text,
+                cl.summary,
+                cl.recording_url,
+                cl.vapi_call_id,
+                cl.created_at,
+                cl.updated_at,
+                cl.hospital_id,
+                -- Build calls object matching frontend expectation
+                jsonb_build_object(
+                    'id', c.id,
+                    'call_sid', c.call_sid,
+                    'from_number', c.from_number,
+                    'to_number', c.to_number,
+                    'conversation_id', c.conversation_id,
+                    'call_status', c.call_status,
+                    'direction', c.direction,
+                    'created_at', c.created_at,
+                    'updated_at', c.updated_at,
+                    'hospital_id', c.hospital_id,
+                    'conversations', jsonb_build_object(
+                        'id', c.conversation_id,
+                        'from_number', c.from_number,
+                        'to_number', c.to_number
+                    )
+                ) as calls
+            FROM ezy_vet_call_logs cl
+            LEFT JOIN ezy_vet_calls c ON c.call_sid = cl.call_sid
+            ${whereClause}
+            ORDER BY cl.created_at DESC
+            LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+        `, [...params, limit, offset]);
+ 
+        // Format the response to exactly match frontend expectations
+        const formattedData = result.rows.map(row => ({
+            id: row.id,
+            call_id: row.call_sid,
+            recording_sid: row.recording_url ? row.recording_url.split('/').pop() : null, // Extract from URL if needed
+            recording_url: row.recording_url,
+            recording_duration: row.recording_duration || 0,
+            transcription_text: row.transcription_text || '',
+            transcription_status: row.transcription_text ? 'completed' : 'pending',
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            calls: row.calls || {
+                id: null,
+                call_sid: row.call_sid,
+                from_number: row.from_number,
+                to_number: null,
+                conversation_id: null,
+                call_status: row.call_status || 'pending',
+                direction: 'inbound',
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+                hospital_id: row.hospital_id,
+                conversations: {
+                    id: null,
+                    from_number: row.from_number,
+                    to_number: null
+                }
+            }
+        }));
+ 
         res.json({
             success: true,
-            data: result.rows || [],
-            count: result.rows?.length || 0
+            data: formattedData,
+            count: formattedData.length,
+            pagination: {
+                page,
+                limit,
+                total,
+                totalPages: Math.ceil(total / limit)
+            }
         });
-
+ 
     } catch (error) {
         logger.error('Error fetching transcriptions:', error);
         res.status(500).json({
@@ -458,61 +603,107 @@ exports.getTranscriptionsByCall = async (req, res) => {
 
 
 
+
+
+
 exports.getDashboardStats = async (req, res) => {
     try {
         const hospitalId = getHospitalId(req);
         if (!hospitalId) {
             return res.status(403).json({ success: false, error: 'No hospital associated with this admin' });
         }
-
-        // Calls count for this hospital
+ 
+        // ── Test if data exists ──
+        const testResult = await executeQuery(
+            `SELECT COUNT(*) as count FROM ezy_vet_calls WHERE hospital_id = $1`,
+            [hospitalId]
+        );
+        console.log('📊 Total calls for hospital:', testResult.rows[0].count);
+ 
+        // ── Total Calls ──
         const totalCallsResult = await executeQuery(
-            `SELECT COUNT(*) FROM ezy_vet_calls WHERE hospital_id = $1`,
+            `SELECT COUNT(*) as count FROM ezy_vet_calls WHERE hospital_id = $1`,
             [hospitalId]
         );
-        const totalCalls = parseInt(totalCallsResult.rows[0].count);
-
-        // Completed calls count
+        const totalCalls = parseInt(totalCallsResult.rows[0]?.count || 0);
+ 
+        // ── Completed Calls ──
         const completedCallsResult = await executeQuery(
-            `SELECT COUNT(*) FROM ezy_vet_calls WHERE call_status = 'completed' AND hospital_id = $1`,
+            `SELECT COUNT(*) as count FROM ezy_vet_calls WHERE call_status = 'completed' AND hospital_id = $1`,
             [hospitalId]
         );
-        const completedCalls = parseInt(completedCallsResult.rows[0].count);
-
-        // Conversations count
+        const completedCalls = parseInt(completedCallsResult.rows[0]?.count || 0);
+ 
+        // ── Conversations ──
         const conversationsResult = await executeQuery(
-            `SELECT COUNT(*) FROM ezy_vet_conversations WHERE hospital_id = $1`,
+            `SELECT COUNT(*) as count FROM ezy_vet_conversations WHERE hospital_id = $1`,
             [hospitalId]
         );
-        const totalConversations = parseInt(conversationsResult.rows[0].count);
-
-        // Transcriptions count (with text)
+        const totalConversations = parseInt(conversationsResult.rows[0]?.count || 0);
+ 
+        // ── Transcriptions ──
         const transcriptionsResult = await executeQuery(
-            `SELECT COUNT(*) FROM ezy_vet_transcriptions WHERE transcription_text IS NOT NULL AND hospital_id = $1`,
+            `SELECT COUNT(*) as count FROM ezy_vet_transcriptions WHERE transcription_text IS NOT NULL AND hospital_id = $1`,
             [hospitalId]
         );
-        const totalTranscriptions = parseInt(transcriptionsResult.rows[0].count);
-
+        const totalTranscriptions = parseInt(transcriptionsResult.rows[0]?.count || 0);
+ 
+        // ── ✅ Get last 7 days with data (FIXED) ──
+        // Use a simpler query without date casting issues
+        const last7DaysResult = await executeQuery(
+            `
+            SELECT
+                created_at::date as date,
+                COUNT(*) as call_count
+            FROM ezy_vet_calls
+            WHERE hospital_id = $1
+                AND created_at >= (NOW() - INTERVAL '7 days')
+            GROUP BY created_at::date
+            ORDER BY created_at::date ASC
+            `,
+            [hospitalId]
+        );
+ 
+        console.log('📊 Last 7 days result:', last7DaysResult.rows);
+ 
+        // ── Format the response ──
+        const last7Days = last7DaysResult.rows.map(row => ({
+            date: row.date,
+            day: new Date(row.date).toLocaleDateString('en-US', { weekday: 'short' }),
+            call_count: parseInt(row.call_count)
+        }));
+ 
+        // ── Today's calls ──
+        const todayCallsResult = await executeQuery(
+            `SELECT COUNT(*) as count FROM ezy_vet_calls
+             WHERE hospital_id = $1
+             AND created_at::date = CURRENT_DATE`,
+            [hospitalId]
+        );
+        const todayCalls = parseInt(todayCallsResult.rows[0]?.count || 0);
+ 
         res.json({
             success: true,
             data: {
-                total_calls: totalCalls || 0,
-                completed_calls: completedCalls || 0,
-                total_conversations: totalConversations || 0,
-                total_transcriptions: totalTranscriptions || 0,
-                completion_rate: totalCalls > 0 ? ((completedCalls / totalCalls) * 100).toFixed(2) : 0
+                total_calls: totalCalls,
+                completed_calls: completedCalls,
+                total_conversations: totalConversations,
+                total_transcriptions: totalTranscriptions,
+                completion_rate: totalCalls > 0 ? ((completedCalls / totalCalls) * 100).toFixed(2) : "0.00",
+                today_calls: todayCalls,
+                last_7_days: last7Days
             }
         });
-
+ 
     } catch (error) {
         logger.error('Error fetching dashboard stats:', error);
         res.status(500).json({
             success: false,
-            error: 'Failed to fetch dashboard stats'
+            error: 'Failed to fetch dashboard stats',
+            details: error.message
         });
     }
 };
-
 
 
 // ============================================
@@ -1422,6 +1613,99 @@ exports.getPricing = async (req, res) => {
         });
     }
 };
+
+
+
+// Update a single Category (by ID)
+exports.updatePricingCategory = async (req, res) => {
+    try {
+        const hospitalId = getHospitalId(req);
+        if (!hospitalId) {
+            return res.status(403).json({ success: false, error: 'No hospital associated with this admin' });
+        }
+ 
+        const { id } = req.params;
+        const { name, display_order } = req.body;
+ 
+        if (!name) {
+            return res.status(400).json({ success: false, error: 'Category name is required' });
+        }
+ 
+        const result = await executeQuery(`
+            UPDATE pricing_categories 
+            SET name = $1, display_order = $2, updated_at = NOW()
+            WHERE id = $3 AND hospital_id = $4
+            RETURNING id, name, display_order
+        `, [name, display_order || 0, id, hospitalId]);
+ 
+        if (result.rows.length === 0) {
+            return res.status(404).json({ success: false, error: 'Category not found or not owned by this hospital' });
+        }
+ 
+        res.json({
+            success: true,
+            data: result.rows[0],
+            message: 'Category updated successfully'
+        });
+ 
+    } catch (error) {
+        logger.error('Error updating pricing category:', error);
+        res.status(500).json({ success: false, error: 'Failed to update category' });
+    }
+};
+ 
+// Update a single Service/Item (by ID)
+exports.updatePricingItem = async (req, res) => {
+    try {
+        const hospitalId = getHospitalId(req);
+        if (!hospitalId) {
+            return res.status(403).json({ success: false, error: 'No hospital associated with this admin' });
+        }
+ 
+        const { id } = req.params;
+        const { service_name, price, description, display_order } = req.body;
+ 
+        if (!service_name || price === undefined) {
+            return res.status(400).json({ success: false, error: 'service_name and price are required' });
+        }
+ 
+        // Verify the item belongs to a category owned by this hospital
+        const checkResult = await executeQuery(`
+            SELECT pi.id 
+            FROM pricing_items pi
+            JOIN pricing_categories pc ON pi.category_id = pc.id
+            WHERE pi.id = $1 AND pc.hospital_id = $2
+        `, [id, hospitalId]);
+ 
+        if (checkResult.rows.length === 0) {
+            return res.status(404).json({ success: false, error: 'Service not found or not owned by this hospital' });
+        }
+ 
+        const result = await executeQuery(`
+            UPDATE pricing_items 
+            SET service_name = $1, price = $2, description = $3, display_order = $4, updated_at = NOW()
+            WHERE id = $5
+            RETURNING id, category_id, service_name, price, description, display_order
+        `, [service_name, price, description || null, display_order || 0, id]);
+ 
+        res.json({
+            success: true,
+            data: result.rows[0],
+            message: 'Service updated successfully'
+        });
+ 
+    } catch (error) {
+        logger.error('Error updating pricing item:', error);
+        res.status(500).json({ success: false, error: 'Failed to update service' });
+    }
+};
+
+
+
+
+
+
+
 
 // Update pricing (bulk update - categories and items)
 exports.updatePricing = async (req, res) => {

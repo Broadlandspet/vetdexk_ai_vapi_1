@@ -1,6 +1,11 @@
 const EmailService = require('../services/emailService');
 const logger = require('../utils/logger');
 
+const { buildAppointmentConfirmationEmail } = require('../emailTemplate/appointment_Confirmation');
+const { buildAppointmentCancellationEmail } = require('../emailTemplate/appointment_Cancellation');
+const { buildCallInterruptedEmail } = require('../emailTemplate/call_Interrupted');
+const { buildQuerySubmittedEmail } = require('../emailTemplate/query_Submitted');
+
 class EmailController {
 
     // Get all email logs
@@ -159,6 +164,239 @@ class EmailController {
             });
         }
     }
+
+
+
+
+    // ─── NEW: Send email tool ──────────────────────────────────────────────
+  
+
+    // static async sendEmailTool(req, res) {
+    //     try {
+    //         const { to, subject, type, data, hospital_id } = req.body;
+
+    //         if (!to) {
+    //             return res.status(400).json({
+    //                 success: false,
+    //                 error: 'Recipient email (to) is required'
+    //             });
+    //         }
+
+    //         if (!type) {
+    //             return res.status(400).json({
+    //                 success: false,
+    //                 error: 'Type is required (e.g., appointment_booked, appointment_cancel, call_interrupted, query_submitted)'
+    //             });
+    //         }
+
+    //         // Validate hospital_id if provided
+    //         let hospitalId = null;
+    //         if (hospital_id !== undefined) {
+    //             hospitalId = parseInt(hospital_id, 10);
+    //             if (isNaN(hospitalId)) {
+    //                 return res.status(400).json({
+    //                     success: false,
+    //                     error: 'hospital_id must be a valid number'
+    //                 });
+    //             }
+    //         }
+
+    //         // Build HTML based on type
+    //         let html;
+    //         let generatedSubject = subject;
+
+    //         switch (type) {
+    //             case 'appointment_booked':
+    //                 html = buildAppointmentConfirmationEmail(data);
+    //                 generatedSubject = generatedSubject || 'Appointment Confirmation | Broadlands Pet Hospital';
+    //                 break;
+    //             case 'appointment_cancel':
+    //                 html = buildAppointmentCancellationEmail(data);
+    //                 generatedSubject = generatedSubject || 'Appointment Cancellation | Broadlands Pet Hospital';
+    //                 break;
+    //             case 'call_interrupted':
+    //                 html = buildCallInterruptedEmail(data);
+    //                 generatedSubject = generatedSubject || 'Call Interrupted | Broadlands Pet Hospital';
+    //                 break;
+    //             case 'query_submitted':
+    //                 html = buildQuerySubmittedEmail(data);
+    //                 generatedSubject = generatedSubject || 'Query Received | Broadlands Pet Hospital';
+    //                 break;
+    //             default:
+    //                 return res.status(400).json({
+    //                     success: false,
+    //                     error: `Invalid type: ${type}. Allowed: appointment_booked, appointment_cancel, call_interrupted, query_submitted`
+    //                 });
+    //         }
+
+    //         // If no subject provided, use generated one
+    //         const finalSubject = generatedSubject || 'Message from Broadlands Pet Hospital';
+
+    //         // Send email via Gmail API
+    //         const result = await EmailService.sendEmailViaGmailAPI({
+    //             to,
+    //             subject: finalSubject,
+    //             html
+    //         });
+
+    //         // Save log with hospital_id (if provided)
+    //         await EmailService.saveEmailLog({
+    //             callSid: null,
+    //             callId: null,
+    //             toEmail: to,
+    //             fromEmail: await EmailService.getSenderEmail(),
+    //             subject: finalSubject,
+    //             bodyHtml: html,
+    //             callerName: data?.patientName || 'Unknown',
+    //             callerNumber: null,
+    //             reasonForCall: type.replace('_', ' ').toUpperCase(),
+    //             callSummary: `Automated email for ${type}`,
+    //             callTranscription: null,
+    //             callDate: new Date(),
+    //             callDuration: 0,
+    //             patientId: null,
+    //             hospitalId: hospitalId   // ✅ Now stored in email_logs
+    //         });
+
+    //         return res.status(200).json({
+    //             success: true,
+    //             message: 'Email sent successfully',
+    //             data: {
+    //                 to,
+    //                 subject: finalSubject,
+    //                 type,
+    //                 hospital_id: hospitalId,
+    //                 messageId: result.messageId
+    //             }
+    //         });
+
+    //     } catch (error) {
+    //         logger.error('Error in sendEmailTool:', error);
+    //         return res.status(500).json({
+    //             success: false,
+    //             error: error.message
+    //         });
+    //     }
+    // }
+
+
+
+static async sendEmailTool(req, res) {
+        try {
+            // Extract all fields from body
+            const { to, subject, type, hospital_id, ...data } = req.body;
+
+            // Validate required top-level fields
+            if (!to) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Recipient email (to) is required'
+                });
+            }
+
+            if (!type) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Type is required (e.g., appointment_booked, appointment_cancel, call_interrupted, query_submitted)'
+                });
+            }
+
+            // Validate hospital_id if provided
+            let hospitalId = null;
+            if (hospital_id !== undefined) {
+                hospitalId = parseInt(hospital_id, 10);
+                if (isNaN(hospitalId)) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'hospital_id must be a valid number'
+                    });
+                }
+            }
+
+            // Build HTML based on type, passing the extracted data object
+            let html;
+            let generatedSubject = subject;
+
+            switch (type) {
+                case 'appointment_booked':
+                    html = buildAppointmentConfirmationEmail(data);
+                    generatedSubject = generatedSubject || 'Appointment Confirmation | Broadlands Pet Hospital';
+                    break;
+                case 'appointment_cancel':
+                    html = buildAppointmentCancellationEmail(data);
+                    generatedSubject = generatedSubject || 'Appointment Cancellation | Broadlands Pet Hospital';
+                    break;
+                case 'call_interrupted':
+                    html = buildCallInterruptedEmail(data);
+                    generatedSubject = generatedSubject || 'Call Interrupted | Broadlands Pet Hospital';
+                    break;
+                case 'query_submitted':
+                    html = buildQuerySubmittedEmail(data);
+                    generatedSubject = generatedSubject || 'Query Received | Broadlands Pet Hospital';
+                    break;
+                default:
+                    return res.status(400).json({
+                        success: false,
+                        error: `Invalid type: ${type}. Allowed: appointment_booked, appointment_cancel, call_interrupted, query_submitted`
+                    });
+            }
+
+            const finalSubject = generatedSubject || 'Message from Broadlands Pet Hospital';
+
+            // Send email
+            const result = await EmailService.sendEmailViaGmailAPI({
+                to,
+                subject: finalSubject,
+                html
+            });
+
+            // Save log with hospital_id if provided
+            await EmailService.saveEmailLog({
+                callSid: null,
+                callId: null,
+                toEmail: to,
+                fromEmail: await EmailService.getSenderEmail(),
+                subject: finalSubject,
+                bodyHtml: html,
+                callerName: data?.patientName || 'Unknown',
+                callerNumber: null,
+                reasonForCall: type.replace('_', ' ').toUpperCase(),
+                callSummary: `Automated email for ${type}`,
+                callTranscription: null,
+                callDate: new Date(),
+                callDuration: 0,
+                patientId: null,
+                hospitalId: hospitalId
+            });
+
+            return res.status(200).json({
+                success: true,
+                message: 'Email sent successfully',
+                data: {
+                    to,
+                    subject: finalSubject,
+                    type,
+                    hospital_id: hospitalId,
+                    messageId: result.messageId
+                }
+            });
+
+        } catch (error) {
+            logger.error('Error in sendEmailTool:', error);
+            return res.status(500).json({
+                success: false,
+                error: error.message
+            });
+        }
+    }
+
+
+
+
+
+
+
+
 }
 
 module.exports = EmailController;

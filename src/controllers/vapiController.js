@@ -1,7 +1,8 @@
 
-// // src/controllers/vapiController.js
+// const { v4: uuidv4 } = require('uuid');
 // const LogService = require('../services/logService');
 // const EmailService = require('../services/emailService');
+// const SmsService = require('../services/smsService');
 // const appointmentController = require('./appointmentController');
 // const patientController = require('./patientController');
 // const slotController = require('./slotController');
@@ -43,27 +44,124 @@
 // };
 
 // // ============================================
-// // HANDLE END OF CALL – WITH hospital_id
+// // HELPER: Normalize phone for lookup
 // // ============================================
-
-
-
-
-// // ─── Inside src/controllers/vapiController.js ──────────────────────────
-
-// // ─── HELPER: Normalize phone for lookup ────────────────────────────────
 // function normalizePhoneForLookup(phone) {
 //     if (!phone) return phone;
-//     // Remove all non-digit characters
 //     let cleaned = phone.replace(/\D/g, '');
-//     // If starts with '1' and has 11 digits, strip the leading '1'
 //     if (cleaned.length === 11 && cleaned.startsWith('1')) {
 //         cleaned = cleaned.substring(1);
 //     }
 //     return cleaned;
 // }
 
-// // ─── FULLY UPDATED _handleEndOfCall ────────────────────────────────────
+// // ============================================
+// // HELPER: Extract phone number from transcript (only from User lines)
+// // ============================================
+// function extractPhoneFromTranscript(transcript) {
+//     if (!transcript) return null;
+//     // Split by newline and look for lines starting with "User:"
+//     const lines = transcript.split('\n');
+//     for (const line of lines) {
+//         if (line.startsWith('User:')) {
+//             // Remove "User:" prefix and any leading/trailing whitespace
+//             const userText = line.replace(/^User:\s*/, '').trim();
+//             // Remove all non-digit characters
+//             const digits = userText.replace(/\D/g, '');
+//             // Find first 10-digit sequence
+//             const match = digits.match(/(\d{10})/);
+//             if (match) {
+//                 return match[1];
+//             }
+//         }
+//     }
+//     return null;
+// }
+
+// // ============================================
+// // HELPER: Extract appointment info from transcript
+// // ============================================
+// function extractAppointmentDataFromTranscript(transcript) {
+//     if (!transcript) return null;
+
+//     const datePattern = /(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)[, ]+([A-Za-z]+) (\d{1,2}),? (\d{4})/i;
+//     const timePattern = /(\d{1,2}):(\d{2}) (AM|PM)/i;
+//     const petNamePattern = /appointment for ([A-Za-z ]+?) (?:on|at|for)/i;
+
+//     const dateMatch = transcript.match(datePattern);
+//     const timeMatch = transcript.match(timePattern);
+//     const petMatch = transcript.match(petNamePattern);
+
+//     if (!dateMatch || !timeMatch) return null;
+
+//     const monthNames = {
+//         january: 1, february: 2, march: 3, april: 4, may: 5, june: 6,
+//         july: 7, august: 8, september: 9, october: 10, november: 11, december: 12
+//     };
+//     const month = dateMatch[2].toLowerCase();
+//     const day = parseInt(dateMatch[3], 10);
+//     const year = parseInt(dateMatch[4], 10);
+
+//     let hours = parseInt(timeMatch[1], 10);
+//     const minutes = parseInt(timeMatch[2], 10);
+//     const ampm = timeMatch[3].toUpperCase();
+//     if (ampm === 'PM' && hours !== 12) hours += 12;
+//     if (ampm === 'AM' && hours === 12) hours = 0;
+
+//     const dateObj = new Date(year, monthNames[month] - 1, day);
+//     const yearLocal = dateObj.getFullYear();
+//     const monthLocal = String(dateObj.getMonth() + 1).padStart(2, '0');
+//     const dayLocal = String(dateObj.getDate()).padStart(2, '0');
+//     const formattedDate = `${yearLocal}-${monthLocal}-${dayLocal}`;
+//     const formattedTime = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+
+//     let petName = null;
+//     if (petMatch) {
+//         petName = petMatch[1].trim();
+//     }
+
+//     return {
+//         date: formattedDate,
+//         time: formattedTime,
+//         dateObj: dateObj,
+//         petName: petName
+//     };
+// }
+
+// // ============================================
+// // HELPER: Find appointment by transcript data
+// // ============================================
+// async function findAppointmentByTranscript(transcript, hospitalId) {
+//     const extracted = extractAppointmentDataFromTranscript(transcript);
+//     if (!extracted) return null;
+
+//     let query = `
+//         SELECT id, appointment_type, pet_owner_id, pet_id, date, time, ezy_vet_appointment_type_id
+//         FROM ezy_vet_appointments
+//         WHERE hospital_id = $1
+//           AND date = $2
+//           AND time::text LIKE $3 || '%'
+//           AND status != 'Cancelled'
+//           AND ezy_vet_appointment_active = 'true'
+//         ORDER BY created_at DESC
+//         LIMIT 1
+//     `;
+//     const params = [hospitalId, extracted.date, extracted.time];
+
+//     try {
+//         const result = await executeQuery(query, params);
+//         if (result.rows.length > 0) {
+//             return result.rows[0];
+//         }
+//     } catch (err) {
+//         console.log(`   ⚠️ Error in findAppointmentByTranscript: ${err.message}`);
+//     }
+//     return null;
+// }
+
+// // ============================================
+// // _handleEndOfCall – Fully Updated
+// // ============================================
 // exports._handleEndOfCall = async (message, res) => {
 //     const callData = message.call || message.artifact?.call;
 //     const transcript = message.artifact?.transcript || message.transcript;
@@ -75,7 +173,6 @@
 //     const summary = message.artifact?.summary || message.summary;
 //     const structuredData = message.artifact?.structuredData || message.structuredData;
 
-//     // ─── Extract hospital_id ──────────────────────────────────────────────
 //     let hospitalId =
 //         message.hospital_id ||
 //         message.hospitalId ||
@@ -92,7 +189,6 @@
 //         hospitalId = parseInt(hospitalId, 10);
 //     }
 
-//     // ─── Fallback: get hospital_id from ezy_vet_pet_owner ────────────────
 //     if (!hospitalId && fromNumber) {
 //         try {
 //             const normalizedPhone = normalizePhoneForLookup(fromNumber);
@@ -107,7 +203,6 @@
 //         } catch (err) { /* ignore */ }
 //     }
 
-//     // ─── Fallback: get hospital_id from ezy_vet_appointments ─────────────
 //     if (!hospitalId && vapiCallId) {
 //         try {
 //             const aptResult = await executeQuery(
@@ -145,12 +240,16 @@
 
 //     const dbSid = vapiCallId;
 //     let conversationId = null;
-//     let callId = null;           // UUID from ezy_vet_calls
+//     let callId = null;
 //     let petOwnerId = null;
 //     let petOwnerName = null;
+//     let petOwnerEmail = null;
 //     let registeredNumber = null;
 //     let appointmentType = null;
 //     let appointmentId = null;
+//     let appointmentBooked = false;
+//     let appointmentDetails = null;
+//     let clinicPhone = null;
 
 //     if (dbSid) {
 //         try {
@@ -198,33 +297,29 @@
 //             console.log(`   Call created with UUID: ${callId} (hospital_id: ${hospitalId || 'NULL'})`);
 
 //             // ─── Step 3: Save transcript/recording ────────────────────
-        
+//             if (transcript && transcript.trim().length > 0) {
+//                 await executeQuery(
+//                     `INSERT INTO ezy_vet_transcriptions (call_id, transcription_text, recording_url, transcription_status, hospital_id)
+//                      VALUES ($1, $2, $3, 'completed', $4)`,
+//                     [callId, transcript, recordingUrl || null, hospitalId || null]
+//                 );
+//                 console.log(`   ✅ Transcript saved to ezy_vet_transcriptions with hospital_id: ${hospitalId || 'NULL'}`);
+//             } else if (recordingUrl) {
+//                 await executeQuery(
+//                     `INSERT INTO ezy_vet_transcriptions (call_id, recording_url, transcription_status, hospital_id)
+//                      VALUES ($1, $2, 'completed', $3)`,
+//                     [callId, recordingUrl, hospitalId || null]
+//                 );
+//                 console.log(`   ✅ Recording URL saved to ezy_vet_transcriptions with hospital_id: ${hospitalId || 'NULL'}`);
+//             }
 
-//             // ─── Step 3: Save transcript/recording with hospital_id ──────────────
-// if (transcript && transcript.trim().length > 0) {
-//     await executeQuery(
-//         `INSERT INTO ezy_vet_transcriptions (call_id, transcription_text, recording_url, transcription_status, hospital_id)
-//          VALUES ($1, $2, $3, 'completed', $4)`,
-//         [callId, transcript, recordingUrl || null, hospitalId || null]
-//     );
-//     console.log(`   ✅ Transcript saved to ezy_vet_transcriptions with hospital_id: ${hospitalId || 'NULL'}`);
-// } else if (recordingUrl) {
-//     await executeQuery(
-//         `INSERT INTO ezy_vet_transcriptions (call_id, recording_url, transcription_status, hospital_id)
-//          VALUES ($1, $2, 'completed', $3)`,
-//         [callId, recordingUrl, hospitalId || null]
-//     );
-//     console.log(`   ✅ Recording URL saved to ezy_vet_transcriptions with hospital_id: ${hospitalId || 'NULL'}`);
-// }
-
-//             // ─── Step 4: Lookup pet owner ─────────────────────────────
+//             // ─── Step 4: Lookup pet owner (by caller's number) ──────
 //             if (fromNumber) {
 //                 const normalizedPhone = normalizePhoneForLookup(fromNumber);
 //                 let ownerResult = await executeQuery(
 //                     `SELECT id, name, phone, email FROM ezy_vet_pet_owner WHERE phone = $1 LIMIT 1`,
 //                     [normalizedPhone]
 //                 );
-//                 // Also try with the original raw number if not found
 //                 if (ownerResult.rows.length === 0 && normalizedPhone !== fromNumber) {
 //                     ownerResult = await executeQuery(
 //                         `SELECT id, name, phone, email FROM ezy_vet_pet_owner WHERE phone = $1 LIMIT 1`,
@@ -234,37 +329,99 @@
 //                 if (ownerResult.rows.length > 0) {
 //                     petOwnerId = ownerResult.rows[0].id;
 //                     petOwnerName = ownerResult.rows[0].name;
+//                     petOwnerEmail = ownerResult.rows[0].email;
 //                     registeredNumber = ownerResult.rows[0].phone;
-//                     console.log(`   ✅ Found pet owner: ${petOwnerName} (ID ${petOwnerId}, phone ${registeredNumber})`);
+//                     console.log(`   ✅ Found pet owner: ${petOwnerName} (ID ${petOwnerId}, phone ${registeredNumber}, email ${petOwnerEmail || 'none'})`);
 //                 } else {
 //                     console.log(`   ⚠️ No pet owner found for number: ${fromNumber}`);
 //                 }
 //             }
 
-//             // ─── Step 5: Lookup appointment ───────────────────────────
+//             // ─── Step 5: Lookup appointment ──────────────────────────────
+//             let aptResult = null;
 //             if (dbSid) {
-//                 const aptResult = await executeQuery(
-//                     `SELECT id, appointment_type, pet_owner_id, pet_id FROM ezy_vet_appointments 
+//                 aptResult = await executeQuery(
+//                     `SELECT id, appointment_type, pet_owner_id, pet_id, date, time, ezy_vet_appointment_type_id
+//                      FROM ezy_vet_appointments 
 //                      WHERE call_sid = $1 
 //                      ORDER BY created_at DESC LIMIT 1`,
 //                     [dbSid]
 //                 );
 //                 if (aptResult.rows.length > 0) {
-//                     appointmentId = aptResult.rows[0].id;
-//                     appointmentType = aptResult.rows[0].appointment_type;
-//                     if (!petOwnerId && aptResult.rows[0].pet_owner_id) {
-//                         petOwnerId = aptResult.rows[0].pet_owner_id;
-//                         const ownerResult = await executeQuery(
-//                             `SELECT name, phone FROM ezy_vet_pet_owner WHERE id = $1`,
-//                             [petOwnerId]
-//                         );
-//                         if (ownerResult.rows.length > 0) {
-//                             petOwnerName = ownerResult.rows[0].name;
-//                             registeredNumber = ownerResult.rows[0].phone;
-//                         }
-//                     }
-//                     console.log(`   ✅ Found appointment type from call_sid: ${appointmentType}`);
+//                     console.log(`   ✅ Found appointment by call_sid: ID ${aptResult.rows[0].id}`);
 //                 }
+//             }
+
+//             // ─── If no appointment by call_sid, try transcript fallback ──
+//             if (!aptResult || aptResult.rows.length === 0) {
+//                 console.log(`   ℹ️ No appointment found by call_sid, attempting transcript fallback...`);
+//                 if (transcript && hospitalId) {
+//                     const fallbackApt = await findAppointmentByTranscript(transcript, hospitalId);
+//                     if (fallbackApt) {
+//                         aptResult = { rows: [fallbackApt] };
+//                         console.log(`   ✅ Found appointment via transcript: ID ${fallbackApt.id}`);
+//                     } else {
+//                         console.log(`   ⚠️ No appointment found via transcript fallback.`);
+//                     }
+//                 } else {
+//                     console.log(`   ⚠️ Transcript or hospitalId missing for fallback.`);
+//                 }
+//             }
+
+//             // ─── Process appointment if found ──────────────────────────────
+//             if (aptResult && aptResult.rows.length > 0) {
+//                 const apt = aptResult.rows[0];
+//                 appointmentId = apt.id;
+//                 appointmentType = apt.appointment_type;
+//                 appointmentBooked = true;
+
+//                 if (apt.pet_owner_id) {
+//                     const ownerResult = await executeQuery(
+//                         `SELECT name, phone, email FROM ezy_vet_pet_owner WHERE id = $1`,
+//                         [apt.pet_owner_id]
+//                     );
+//                     if (ownerResult.rows.length > 0) {
+//                         petOwnerId = apt.pet_owner_id;
+//                         petOwnerName = ownerResult.rows[0].name;
+//                         petOwnerEmail = ownerResult.rows[0].email;
+//                         registeredNumber = ownerResult.rows[0].phone;
+//                         console.log(`   ✅ Owner from appointment: ${petOwnerName} (${petOwnerEmail || 'no email'})`);
+//                     }
+//                 }
+
+//                 let petName = 'Unknown';
+//                 if (apt.pet_id) {
+//                     const petResult = await executeQuery(
+//                         `SELECT pet_name FROM ezy_vet_pets WHERE id = $1`,
+//                         [apt.pet_id]
+//                     );
+//                     if (petResult.rows.length > 0) {
+//                         petName = petResult.rows[0].pet_name;
+//                     }
+//                 }
+
+//                 if (petName === 'Unknown' || petName === null) {
+//                     const extracted = extractAppointmentDataFromTranscript(transcript);
+//                     if (extracted && extracted.petName) {
+//                         petName = extracted.petName;
+//                         console.log(`   ℹ️ Pet name from transcript fallback: ${petName}`);
+//                     }
+//                 }
+
+//                 const formattedDate = apt.date instanceof Date ? apt.date.toISOString().split('T')[0] : apt.date;
+//                 const formattedTime = typeof apt.time === 'string' ? apt.time : (apt.time ? apt.time.toString() : '');
+
+//                 appointmentDetails = {
+//                     petName: petName,
+//                     date: formattedDate,
+//                     time: formattedTime,
+//                     appointmentType: apt.appointment_type || 'Consult',
+//                     doctorName: 'Doctor',
+//                     appointmentId: apt.id
+//                 };
+//                 console.log(`   ✅ Appointment booked: ${petName} on ${formattedDate} at ${formattedTime}`);
+//             } else {
+//                 console.log(`   ℹ️ No appointment found for this call.`);
 //             }
 
 //             // ─── Step 6: Insert into ezy_vet_call_logs ────────────────
@@ -321,10 +478,9 @@
 //                 const finalRegisteredNumber = registeredNumber || null;
 
 //                 try {
-//                     // ─── Pass callId as null to avoid foreign key constraint on old calls table ───
-//                     const emailResult = await EmailService.sendCallSummaryEmail({
+//                     const emailData = {
 //                         callSid: dbSid,
-//                         callId: null,  // ⬅️ Set to null to bypass old foreign key
+//                         callId: null,
 //                         callerNumber: fromNumber || 'unknown',
 //                         callerName: finalCallerName,
 //                         reasonForCall: finalReasonForCall,
@@ -336,8 +492,13 @@
 //                         callDate: new Date(),
 //                         summary: summary || null,
 //                         recordingUrl: recordingUrl || null,
-//                         hospitalId: hospitalId  // ⬅️ Pass hospital_id to email service
-//                     });
+//                         hospitalId: hospitalId,
+//                         appointmentBooked: appointmentBooked,
+//                         appointmentDetails: appointmentDetails,
+//                         callerEmail: petOwnerEmail
+//                     };
+
+//                     const emailResult = await EmailService.sendCallSummaryEmail(emailData);
 
 //                     if (emailResult.success) {
 //                         console.log(`   ✅ Email sent successfully using professional template!`);
@@ -354,6 +515,116 @@
 //                 console.log(`\n📧 No transcript available, skipping email.`);
 //             }
 
+//             // ─── Step 8: Send SUCCESS SMS if appointment was booked ──────
+//             if (appointmentBooked && registeredNumber) {
+//                 console.log(`\n📱 SENDING APPOINTMENT CONFIRMATION SMS TO PATIENT...`);
+//                 console.log(`${'-'.repeat(40)}`);
+
+//                 try {
+//                     const hospitalResult = await executeQuery(
+//                         `SELECT hospital_number FROM hospitals WHERE id = $1`,
+//                         [hospitalId]
+//                     );
+//                     clinicPhone = hospitalResult.rows.length > 0 ? hospitalResult.rows[0].hospital_number : '571-707-8844';
+
+//                     let successPetName = appointmentDetails?.petName || 'your pet';
+//                     if (successPetName === 'Unknown' || successPetName === 'your pet') {
+//                         const extracted = extractAppointmentDataFromTranscript(transcript);
+//                         if (extracted && extracted.petName) {
+//                             successPetName = extracted.petName;
+//                         }
+//                     }
+
+//                     const smsMessage = `Hi ${petOwnerName || 'Pet Owner'},
+
+// Thanks for scheduling an appointment at Broadlands Animal Hospital for ${successPetName} on ${appointmentDetails?.date || ''} at ${appointmentDetails?.time || ''}!
+
+// If you have any questions in the meantime, please call us at ${clinicPhone}.
+
+// We look forward to seeing you soon,
+// Broadlands Animal Hospital`;
+
+//                     const smsResult = await SmsService.sendSms({
+//                         hospitalId: hospitalId,
+//                         to: registeredNumber,
+//                         message: smsMessage,
+//                         transportType: 'twilio.sms',
+//                         useLLMGenerated: false
+//                     });
+
+//                     if (smsResult.success) {
+//                         console.log(`   ✅ SMS sent successfully to ${registeredNumber}`);
+//                         console.log(`   Vapi chat ID: ${smsResult.data.id}`);
+//                     } else {
+//                         console.log(`   ❌ SMS failed: ${smsResult.error}`);
+//                     }
+//                 } catch (smsErr) {
+//                     console.error(`   ❌ SMS error: ${smsErr.message}`);
+//                 }
+//                 console.log(`${'-'.repeat(40)}`);
+//             }
+
+//             // ─── Step 9: Send FAILURE SMS if user intended to book but no appointment ──
+//             const userWantedToBook = /book an appointment|book a|schedule an appointment|i want to book|set an appointment|i wanna book|need to book/i.test(transcript);
+//             if (userWantedToBook && !appointmentBooked) {
+//                 console.log(`\n📱 SENDING FAILURE SMS (Booking Failed)...`);
+//                 console.log(`${'-'.repeat(40)}`);
+
+//                 try {
+//                     // ─── Determine recipient number: use transcript extraction first ──
+//                     let recipientNumber = null;
+//                     const transcriptPhone = extractPhoneFromTranscript(transcript);
+//                     if (transcriptPhone) {
+//                         recipientNumber = transcriptPhone;
+//                         console.log(`   ℹ️ Using phone extracted from transcript: ${recipientNumber}`);
+//                     } else if (registeredNumber) {
+//                         recipientNumber = registeredNumber;
+//                         console.log(`   ℹ️ Using registeredNumber (fallback): ${recipientNumber}`);
+//                     }
+
+//                     if (!recipientNumber) {
+//                         console.log(`   ⚠️ No recipient number found, skipping failure SMS.`);
+//                     } else {
+//                         let failureOwnerName = petOwnerName || 'Valued Customer';
+//                         if (!petOwnerName) {
+//                             const nameMatch = transcript.match(/Welcome back[, ]+([A-Za-z]+ [A-Za-z]+)/i);
+//                             if (nameMatch) failureOwnerName = nameMatch[1] || 'Valued Customer';
+//                         }
+
+//                         const hospitalResult = await executeQuery(
+//                             `SELECT hospital_number FROM hospitals WHERE id = $1`,
+//                             [hospitalId]
+//                         );
+//                         clinicPhone = hospitalResult.rows.length > 0 ? hospitalResult.rows[0].hospital_number : '571-707-8844';
+
+//                         const failureMessage = `Hi ${failureOwnerName},
+
+// Thanks for calling Broadlands Animal Hospital. Due to a technical error, we could not complete your request. Please call us at ${clinicPhone} during working hours or visit us at https://broadlandsvethospital.com/.
+
+// Thank You,
+// Broadlands Animal Hospital`;
+
+//                         const smsResult = await SmsService.sendSms({
+//                             hospitalId: hospitalId,
+//                             to: recipientNumber,
+//                             message: failureMessage,
+//                             transportType: 'twilio.sms',
+//                             useLLMGenerated: false
+//                         });
+
+//                         if (smsResult.success) {
+//                             console.log(`   ✅ Failure SMS sent successfully to ${recipientNumber}`);
+//                             console.log(`   Vapi chat ID: ${smsResult.data.id}`);
+//                         } else {
+//                             console.log(`   ❌ Failure SMS failed: ${smsResult.error}`);
+//                         }
+//                     }
+//                 } catch (smsErr) {
+//                     console.error(`   ❌ Failure SMS error: ${smsErr.message}`);
+//                 }
+//                 console.log(`${'-'.repeat(40)}`);
+//             }
+
 //         } catch (err) {
 //             console.error(`   ❌ Database error: ${err.message}`);
 //         }
@@ -364,23 +635,8 @@
 //     return res.json({ received: true });
 // };
 
-
-
-
-
-
-
-
-
-
-
 // // ============================================
 // // HANDLE FUNCTION CALLS
-// // ============================================
-
-
-// // ============================================
-// // CHECK WORKING HOURS
 // // ============================================
 // exports._checkWorkingHours = async (args) => {
 //   const hospitalId = args.hospital_id || args.hospitalId || 1;
@@ -406,11 +662,14 @@
 //   return hoursMap;
 // };
 
+// // Placeholders
+// exports._findPatientByPhone = async (args) => {
+//   return { found: false };
+// };
 
-// // ============================================
-// // FIND PATIENT BY PHONE
-// // ============================================
-
+// exports._getAvailableSlots = async (args) => {
+//   return { slots: [] };
+// };
 
 // // ============================================
 // // HANDLE FUNCTION CALL API
@@ -462,13 +721,14 @@
 
 
 
-
+///////---------chanegs 
 
 
 
 const { v4: uuidv4 } = require('uuid');
 const LogService = require('../services/logService');
 const EmailService = require('../services/emailService');
+// const SmsService = require('../services/smsService');  // ⬅️ REMOVED
 const appointmentController = require('./appointmentController');
 const patientController = require('./patientController');
 const slotController = require('./slotController');
@@ -522,6 +782,25 @@ function normalizePhoneForLookup(phone) {
 }
 
 // ============================================
+// HELPER: Extract phone number from transcript (only from User lines)
+// ============================================
+function extractPhoneFromTranscript(transcript) {
+    if (!transcript) return null;
+    const lines = transcript.split('\n');
+    for (const line of lines) {
+        if (line.startsWith('User:')) {
+            const userText = line.replace(/^User:\s*/, '').trim();
+            const digits = userText.replace(/\D/g, '');
+            const match = digits.match(/(\d{10})/);
+            if (match) {
+                return match[1];
+            }
+        }
+    }
+    return null;
+}
+
+// ============================================
 // HELPER: Extract appointment info from transcript
 // ============================================
 function extractAppointmentDataFromTranscript(transcript) {
@@ -552,7 +831,10 @@ function extractAppointmentDataFromTranscript(transcript) {
     if (ampm === 'AM' && hours === 12) hours = 0;
 
     const dateObj = new Date(year, monthNames[month] - 1, day);
-    const formattedDate = dateObj.toISOString().split('T')[0];
+    const yearLocal = dateObj.getFullYear();
+    const monthLocal = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const dayLocal = String(dateObj.getDate()).padStart(2, '0');
+    const formattedDate = `${yearLocal}-${monthLocal}-${dayLocal}`;
     const formattedTime = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 
     let petName = null;
@@ -580,7 +862,7 @@ async function findAppointmentByTranscript(transcript, hospitalId) {
         FROM ezy_vet_appointments
         WHERE hospital_id = $1
           AND date = $2
-          AND time = $3
+          AND time::text LIKE $3 || '%'
           AND status != 'Cancelled'
           AND ezy_vet_appointment_active = 'true'
         ORDER BY created_at DESC
@@ -600,7 +882,7 @@ async function findAppointmentByTranscript(transcript, hospitalId) {
 }
 
 // ============================================
-// _handleEndOfCall – Fully Updated
+// _handleEndOfCall – Fully Updated (SMS removed, Caller Email removed)
 // ============================================
 exports._handleEndOfCall = async (message, res) => {
     const callData = message.call || message.artifact?.call;
@@ -613,7 +895,6 @@ exports._handleEndOfCall = async (message, res) => {
     const summary = message.artifact?.summary || message.summary;
     const structuredData = message.artifact?.structuredData || message.structuredData;
 
-    // ─── Extract hospital_id ──────────────────────────────────────────────
     let hospitalId =
         message.hospital_id ||
         message.hospitalId ||
@@ -630,7 +911,6 @@ exports._handleEndOfCall = async (message, res) => {
         hospitalId = parseInt(hospitalId, 10);
     }
 
-    // ─── Fallback: get hospital_id from ezy_vet_pet_owner ────────────────
     if (!hospitalId && fromNumber) {
         try {
             const normalizedPhone = normalizePhoneForLookup(fromNumber);
@@ -645,7 +925,6 @@ exports._handleEndOfCall = async (message, res) => {
         } catch (err) { /* ignore */ }
     }
 
-    // ─── Fallback: get hospital_id from ezy_vet_appointments ─────────────
     if (!hospitalId && vapiCallId) {
         try {
             const aptResult = await executeQuery(
@@ -692,6 +971,7 @@ exports._handleEndOfCall = async (message, res) => {
     let appointmentId = null;
     let appointmentBooked = false;
     let appointmentDetails = null;
+    let clinicPhone = null;
 
     if (dbSid) {
         try {
@@ -817,7 +1097,6 @@ exports._handleEndOfCall = async (message, res) => {
                 appointmentType = apt.appointment_type;
                 appointmentBooked = true;
 
-                // ─── Override owner with the one from the appointment ─────
                 if (apt.pet_owner_id) {
                     const ownerResult = await executeQuery(
                         `SELECT name, phone, email FROM ezy_vet_pet_owner WHERE id = $1`,
@@ -832,7 +1111,6 @@ exports._handleEndOfCall = async (message, res) => {
                     }
                 }
 
-                // ─── Fetch pet name ──────────────────────────────────────
                 let petName = 'Unknown';
                 if (apt.pet_id) {
                     const petResult = await executeQuery(
@@ -844,20 +1122,23 @@ exports._handleEndOfCall = async (message, res) => {
                     }
                 }
 
-                // ─── Format date and time as strings ────────────────────
-                const formattedDate = apt.date instanceof Date
-                    ? apt.date.toISOString().split('T')[0]
-                    : apt.date;
-                const formattedTime = typeof apt.time === 'string'
-                    ? apt.time
-                    : (apt.time ? apt.time.toString() : '');
+                if (petName === 'Unknown' || petName === null) {
+                    const extracted = extractAppointmentDataFromTranscript(transcript);
+                    if (extracted && extracted.petName) {
+                        petName = extracted.petName;
+                        console.log(`   ℹ️ Pet name from transcript fallback: ${petName}`);
+                    }
+                }
+
+                const formattedDate = apt.date instanceof Date ? apt.date.toISOString().split('T')[0] : apt.date;
+                const formattedTime = typeof apt.time === 'string' ? apt.time : (apt.time ? apt.time.toString() : '');
 
                 appointmentDetails = {
                     petName: petName,
                     date: formattedDate,
                     time: formattedTime,
                     appointmentType: apt.appointment_type || 'Consult',
-                    doctorName: 'Doctor', // placeholder – could be improved
+                    doctorName: 'Doctor',
                     appointmentId: apt.id
                 };
                 console.log(`   ✅ Appointment booked: ${petName} on ${formattedDate} at ${formattedTime}`);
@@ -899,7 +1180,7 @@ exports._handleEndOfCall = async (message, res) => {
             );
             console.log(`   ✅ ezy_vet_call_logs record saved with hospital_id: ${hospitalId || 'NULL'}`);
 
-            // ─── Step 7: Send email ───────────────────────────────────
+            // ─── Step 7: Send email to ADMIN only (caller email removed) ──
             if (transcript && transcript.trim().length > 0) {
                 console.log(`\n📧 SENDING CALL SUMMARY EMAIL TO ADMIN...`);
                 console.log(`${'-'.repeat(40)}`);
@@ -936,7 +1217,7 @@ exports._handleEndOfCall = async (message, res) => {
                         hospitalId: hospitalId,
                         appointmentBooked: appointmentBooked,
                         appointmentDetails: appointmentDetails,
-                        callerEmail: petOwnerEmail
+                        callerEmail: null   // ⬅️ Force no caller email
                     };
 
                     const emailResult = await EmailService.sendCallSummaryEmail(emailData);
@@ -955,6 +1236,9 @@ exports._handleEndOfCall = async (message, res) => {
             } else {
                 console.log(`\n📧 No transcript available, skipping email.`);
             }
+
+            // ─── Step 8 & 9: SMS SENDING REMOVED ──────────────────────────
+            // All SMS logic (success and failure) has been removed.
 
         } catch (err) {
             console.error(`   ❌ Database error: ${err.message}`);

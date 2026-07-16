@@ -2,7 +2,17 @@ const express = require('express');
 const EmailController = require('../controllers/emailController');
 const { verifyToken, requireRole } = require('../middleware/auth');
 
+const apiKeyAuth = require('../middleware/apiKeyAuth');
+
 const router = express.Router();
+
+
+
+
+// ─── Public / AI tool route (API key only) ──────────────────────────────
+// This route is defined BEFORE the admin auth middleware, so it does NOT require a JWT token.
+router.post('/sendEmailTool', apiKeyAuth, EmailController.sendEmailTool)
+
 
 // All email routes require authentication
 router.use(verifyToken);
@@ -19,5 +29,14 @@ router.delete('/config/:id', EmailController.deleteEmailConfig);
 
 // Test email
 router.post('/test', EmailController.testEmailConfig);
+
+
+
+
+
+
+
+
+
 
 module.exports = router;

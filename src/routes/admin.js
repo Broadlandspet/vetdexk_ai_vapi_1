@@ -41,7 +41,9 @@ const {
         getEmailLogs,
     getEmailLogsStats,
     getEmailConfig,
-    updateEmailConfig
+    updateEmailConfig,
+    updatePricingCategory,
+    updatePricingItem
 
 } = require('../controllers/adminController');
 
@@ -136,7 +138,11 @@ router.delete('/pricing/category/:id', deletePricingCategory);
 // Delete service item (soft delete)
 router.delete('/pricing/item/:id', deletePricingItem);
 
-
+// Update single category
+router.put('/pricing/category/:id', updatePricingCategory);
+ 
+// Update single service item
+router.put('/pricing/item/:id', updatePricingItem);
 
 
 
