@@ -385,7 +385,8 @@ module.exports = {
   VAPI_API_KEY: process.env.VAPI_API_KEY,
   VAPI_ASSISTANT_ID: process.env.VAPI_ASSISTANT_ID,
   VAPI_WEBHOOK_SECRET: process.env.VAPI_WEBHOOK_SECRET,
-  
+ CALENDLY_URL: process.env.CALENDLY_URL,
+  CALENDLY_PAT: process.env.CALENDLY_PAT,
   // ============================================
   // Database Configuration (PostgreSQL / Supabase)
   // ============================================

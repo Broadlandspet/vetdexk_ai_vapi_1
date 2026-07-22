@@ -1,8 +1,3 @@
-
-
-
-
-// ─── DEPENDENCIES ────────────────────────────────────────────────────────
 const patientService = require('../services/patientService');
 const logger = require('../utils/logger');
 

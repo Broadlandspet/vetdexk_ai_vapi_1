@@ -1,36 +1,74 @@
+// const CalendlyService = require("../services/calendlyService");
+
+// class CalendlyController {
+
+//     static async getCurrentUser(req, res) {
+
+//         try {
+
+//             const user = await CalendlyService.getCurrentUser();
+
+//             return res.json({
+//                 success: true,
+//                 data: {
+//                     userUri: user.uri,
+//                     organizationUri: user.current_organization,
+//                     name: user.name,
+//                     email: user.email
+//                 }
+//             });
+
+//         } catch (error) {
+
+//             console.error(error.response?.data || error);
+
+//             return res.status(500).json({
+//                 success: false,
+//                 message: error.response?.data || error.message
+//             });
+
+//         }
+
+//     }
+
+// }
+
+// module.exports = CalendlyController;
+
+
+
+
+
+
+
 const CalendlyService = require("../services/calendlyService");
 
-class CalendlyController {
+// ─── EXPORTED FUNCTIONS ──────────────────────────────────────────────────────────
 
-    static async getCurrentUser(req, res) {
+/**
+ * Get the current authenticated Calendly user
+ * GET /api/calendly/me
+ */
+exports.getCurrentUser = async (req, res) => {
+    try {
+        const user = await CalendlyService.getCurrentUser();
 
-        try {
+        return res.json({
+            success: true,
+            data: {
+                userUri: user.uri,
+                organizationUri: user.current_organization,
+                name: user.name,
+                email: user.email
+            }
+        });
 
-            const user = await CalendlyService.getCurrentUser();
+    } catch (error) {
+        console.error(error.response?.data || error);
 
-            return res.json({
-                success: true,
-                data: {
-                    userUri: user.uri,
-                    organizationUri: user.current_organization,
-                    name: user.name,
-                    email: user.email
-                }
-            });
-
-        } catch (error) {
-
-            console.error(error.response?.data || error);
-
-            return res.status(500).json({
-                success: false,
-                message: error.response?.data || error.message
-            });
-
-        }
-
+        return res.status(500).json({
+            success: false,
+            message: error.response?.data || error.message
+        });
     }
-
-}
-
-module.exports = CalendlyController;
+};

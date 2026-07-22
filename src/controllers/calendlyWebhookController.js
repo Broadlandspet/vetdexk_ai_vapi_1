@@ -1,32 +1,67 @@
+// const BookDemoService = require("../services/bookDemoService");
+// const logger = require("../utils/logger");
+
+// class CalendlyWebhookController {
+
+//     static async webhook(req, res) {
+//         try {
+
+//             logger.info("Calendly webhook received");
+
+//             logger.info(req.body);
+
+//             await BookDemoService.processCalendlyWebhook(req.body);
+
+//             return res.status(200).json({
+//                 success: true
+//             });
+
+//         } catch (err) {
+
+//             logger.error("Calendly webhook error:", err);
+
+//             return res.status(500).json({
+//                 success: false
+//             });
+
+//         }
+//     }
+
+// }
+
+// module.exports = CalendlyWebhookController;
+
+
+
+
+
+
+
 const BookDemoService = require("../services/bookDemoService");
 const logger = require("../utils/logger");
 
-class CalendlyWebhookController {
+// ─── EXPORTED FUNCTIONS ──────────────────────────────────────────────────────────
 
-    static async webhook(req, res) {
-        try {
+/**
+ * Handle Calendly webhook (public)
+ * POST /api/calendly/webhook
+ */
+exports.webhook = async (req, res) => {
+    try {
+        logger.info("Calendly webhook received");
+        logger.info(req.body);
 
-            logger.info("Calendly webhook received");
+        await BookDemoService.processCalendlyWebhook(req.body);
 
-            logger.info(req.body);
+        return res.status(200).json({
+            success: true
+        });
 
-            await BookDemoService.processCalendlyWebhook(req.body);
+    } catch (err) {
+        logger.error("Calendly webhook error:", err);
 
-            return res.status(200).json({
-                success: true
-            });
-
-        } catch (err) {
-
-            logger.error("Calendly webhook error:", err);
-
-            return res.status(500).json({
-                success: false
-            });
-
-        }
+        return res.status(500).json({
+            success: false
+        });
     }
-
-}
-
-module.exports = CalendlyWebhookController;
+};

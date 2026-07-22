@@ -1,5 +1,3 @@
-
-// src/routes/vapi.js
 const express = require('express');
 const VapiController = require('../controllers/vapiController');
 const apiKeyAuth = require('../middleware/apiKeyAuth');

@@ -1,8 +1,3 @@
-
-///////////////////-----------------edit----------------------------///////
-
-
-
 const { executeQuery } = require('../config/database');
 const logger = require('../utils/logger');
 const env = require('../config/env');

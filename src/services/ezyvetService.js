@@ -50,22 +50,6 @@ const APPOINTMENT_TYPE_MAP = {
 
 
 
-// ─── HARDCODED DOCTOR UIDS AND NAMES ────────────────────────────────────
-// const DOCTOR_RESOURCES = [
-//     {
-//         uid: 'resource_1dPZDf2n8oixXJ1HWFvjM',
-//         name: 'Emily Miralaie, DVM'
-//     },
-//     {
-//         uid: 'resource_VJATtiYXmGObZOFgU2dzG',
-//         name: 'Alexis Kessler DVM'
-//     },
-//     {
-//         uid: 'resource_3tck1fmRlQ1TcubiL6ocb',
-//         name: 'Amanda Munoz DVM'
-//     }
-// ];
-
 
 // ─── HARDCODED DOCTOR UIDS, NAMES, AND NUMERIC IDs ──────────────────
 const DOCTOR_RESOURCES = [
@@ -349,33 +333,6 @@ exports.createContact = async (hospitalId, contactData) => {
 
 
 // // ─── CREATE ANIMAL (PET) ──────────────────────────────────────────────
-// exports.createAnimal = async (hospitalId, animalData) => {
-//     const token = await exports.getAccessToken(hospitalId);
-//     const payload = {
-//         contact_id: animalData.contact_id,
-//         name: animalData.name,
-//         sex_id: animalData.sex_id,
-//         species_id: animalData.species_id,
-//         breed_id: animalData.breed_id
-//     };
-//     if (animalData.animalcolour_id !== null && animalData.animalcolour_id !== undefined) {
-//         payload.animalcolour_id = animalData.animalcolour_id;
-//     }
-//     try {
-//         const response = await axios.post(`${EZY_VET_API_BASE_V1}/v1/animal`, payload, {
-//             headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
-//         });
-//         const animal = response.data.items[0].animal;
-//         return {
-//             id: animal.id,
-//             code: animal.code,
-//             name: animal.name,
-//         };
-//     } catch (error) {
-//         logger.error('ezyVet create animal failed:', error.response?.data || error.message);
-//         throw new Error(`Animal creation failed: ${error.response?.data?.message || error.message}`);
-//     }
-// };
 
 
 exports.createAnimal = async (hospitalId, animalData) => {
@@ -877,78 +834,7 @@ exports.getAppointmentsByOwner = async (hospitalId, petOwnerId) => {
  * @param {number|null} resourceId - Optional resource ID to filter conflicts
  * @returns {Promise<Array>} - Array of objects: { date, timezone, for_dr, slots }
  */
-// exports.getAvailabilityForAllDoctors = async (hospitalId, dates, duration = 30, resourceId = null) => {
-//     const result = [];
 
-//     // Loop through hardcoded doctor resources
-//     for (const doctor of DOCTOR_RESOURCES) {
-//         const uid = doctor.uid;
-//         const doctorName = doctor.name;
-
-//         logger.info(`Fetching availability for doctor: ${doctorName} (${uid})`);
-
-//         let availability;
-//         try {
-//             availability = await exports.fetchResourceAvailability(hospitalId, uid, dates, duration);
-//         } catch (err) {
-//             logger.warn(`Failed to fetch availability for doctor ${doctorName}: ${err.message}`);
-//             continue; // skip this doctor if fetch fails
-//         }
-
-//         // If no slots for this doctor on any date, skip
-//         if (!availability || availability.length === 0) {
-//             logger.info(`No slots from ezyVet for doctor ${doctorName} on requested dates`);
-//             continue;
-//         }
-
-//         // For each date entry, filter slots by local DB availability
-//         for (const dateEntry of availability) {
-//             if (!dateEntry.slots || dateEntry.slots.length === 0) {
-//                 continue;
-//             }
-
-//             // Filter slots based on local DB availability
-//             const filteredSlots = [];
-
-//             for (const slot of dateEntry.slots) {
-//                 // Parse the time from the slot
-//                 const timeStr = slot.time.split(' – ')[0].trim();
-//                 const dateTimeStr = `${dateEntry.date} ${timeStr}`;
-                
-//                 // Convert to Unix timestamp
-//                 const startAt = moment.tz(dateTimeStr, 'YYYY-MM-DD HH:mm', dateEntry.timezone).unix();
-//                 const slotDuration = slot.duration || duration;
-
-//                 // ✅ Check local DB for conflicts
-//                 const isAvailable = await exports.checkLocalAvailability(
-//                     hospitalId, 
-//                     startAt, 
-//                     slotDuration, 
-//                     resourceId
-//                 );
-                
-//                 if (isAvailable) {
-//                     // ✅ Only keep slots that are free in local DB
-//                     filteredSlots.push(slot);
-//                 } else {
-//                     logger.debug(`Slot ${slot.time} for ${doctorName} on ${dateEntry.date} is booked in local DB - filtering out`);
-//                 }
-//             }
-
-//             // Only add to result if there are slots available
-//             if (filteredSlots.length > 0) {
-//                 result.push({
-//                     date: dateEntry.date,
-//                     timezone: dateEntry.timezone,
-//                     for_dr: doctorName,
-//                     slots: filteredSlots
-//                 });
-//             }
-//         }
-//     }
-
-//     return result;
-// };
 
 
 exports.getAvailabilityForAllDoctors = async (hospitalId, dates, duration = 30, resourceId = null) => {

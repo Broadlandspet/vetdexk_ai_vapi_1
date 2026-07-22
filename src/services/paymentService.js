@@ -45,7 +45,6 @@
 //                 await executeQuery('COMMIT');
 
 //                 logger.info(`✅ Static payment recorded for booking #${bookingId} - Plan: ${planId}`);
-//                 logger.info(`   Payment Status: completed, Booking Status: payment_completed`);
 
 //                 return {
 //                     success: true,
@@ -66,16 +65,22 @@
 //         }
 //     }
 
-//     // Check payment status
+//     // ✅ UPDATED: Check payment status with full details
 //     static async getPaymentStatus(bookingId) {
 //         try {
 //             const result = await executeQuery(
 //                 `
 //                 SELECT 
 //                     id,
+//                     full_name,
+//                     email,
+//                     hospital_name,
+//                     hospital_phone,
 //                     status,
 //                     payment_status,
 //                     notes,
+//                     feedback_received,
+//                     created_at,
 //                     updated_at
 //                 FROM book_demo 
 //                 WHERE id = $1
@@ -94,20 +99,33 @@
             
 //             // Extract payment info from notes if available
 //             let paymentInfo = null;
+//             let planInfo = null;
 //             if (booking.notes && booking.notes.includes('[Payment]')) {
 //                 const noteLines = booking.notes.split('\n');
 //                 const paymentNote = noteLines.find(line => line.includes('[Payment]'));
 //                 if (paymentNote) {
 //                     paymentInfo = paymentNote;
+//                     // Extract plan info
+//                     const planMatch = paymentNote.match(/Plan: (\w+)/);
+//                     if (planMatch) {
+//                         planInfo = planMatch[1];
+//                     }
 //                 }
 //             }
             
 //             return {
 //                 bookingId: booking.id,
+//                 fullName: booking.full_name,
+//                 email: booking.email,
+//                 hospitalName: booking.hospital_name,
+//                 hospitalPhone: booking.hospital_phone,
 //                 isPaid,
 //                 paymentStatus: booking.payment_status || 'not_started',
 //                 bookingStatus: booking.status,
+//                 feedbackReceived: booking.feedback_received,
 //                 paymentInfo,
+//                 planInfo,
+//                 createdAt: booking.created_at,
 //                 updatedAt: booking.updated_at
 //             };
             
@@ -155,178 +173,188 @@
 // module.exports = PaymentService;
 
 
-// services/paymentService.js
+
+
+
+
+
+
+
+
 
 const { executeQuery } = require('../config/database');
 const logger = require('../utils/logger');
 
-class PaymentService {
+// ─── EXPORTED FUNCTIONS ──────────────────────────────────────────────────────────
 
-    // Record static payment (no actual payment processing)
-    static async recordStaticPayment(data) {
+/**
+ * Record static payment (no actual payment processing)
+ */
+exports.recordStaticPayment = async (data) => {
+    try {
+        const {
+            bookingId,
+            planId,
+            amount,
+            currency
+        } = data;
+
+        // Start transaction
+        await executeQuery('BEGIN');
+
         try {
-            const {
-                bookingId,
-                planId,
-                amount,
-                currency
-            } = data;
+            // Generate static transaction ID
+            const transactionId = `static_${Date.now()}_${bookingId}`;
 
-            // Start transaction
-            await executeQuery('BEGIN');
-
-            try {
-                // Generate static transaction ID
-                const transactionId = `static_${Date.now()}_${bookingId}`;
-
-                // Update booking with payment status
-                const result = await executeQuery(
-                    `
-                    UPDATE book_demo 
-                    SET 
-                        payment_status = 'completed',
-                        status = 'payment_completed',
-                        notes = COALESCE(notes, '') || $1,
-                        updated_at = NOW()
-                    WHERE id = $2
-                    RETURNING *
-                    `,
-                    [
-                        `\n[Payment] Plan: ${planId}, Amount: ${amount} ${currency}, Transaction: ${transactionId}, Date: ${new Date().toISOString()}`,
-                        bookingId
-                    ]
-                );
-
-                if (result.rows.length === 0) {
-                    throw new Error('Booking not found');
-                }
-
-                await executeQuery('COMMIT');
-
-                logger.info(`✅ Static payment recorded for booking #${bookingId} - Plan: ${planId}`);
-
-                return {
-                    success: true,
-                    bookingId: bookingId,
-                    planId: planId,
-                    transactionId: transactionId,
-                    booking: result.rows[0]
-                };
-
-            } catch (error) {
-                await executeQuery('ROLLBACK');
-                throw error;
-            }
-
-        } catch (error) {
-            logger.error('Error recording static payment:', error);
-            throw error;
-        }
-    }
-
-    // ✅ UPDATED: Check payment status with full details
-    static async getPaymentStatus(bookingId) {
-        try {
-            const result = await executeQuery(
-                `
-                SELECT 
-                    id,
-                    full_name,
-                    email,
-                    hospital_name,
-                    hospital_phone,
-                    status,
-                    payment_status,
-                    notes,
-                    feedback_received,
-                    created_at,
-                    updated_at
-                FROM book_demo 
-                WHERE id = $1
-                `,
-                [bookingId]
-            );
-            
-            if (result.rows.length === 0) {
-                return null;
-            }
-            
-            const booking = result.rows[0];
-            
-            // Check if payment was completed
-            const isPaid = booking.payment_status === 'completed';
-            
-            // Extract payment info from notes if available
-            let paymentInfo = null;
-            let planInfo = null;
-            if (booking.notes && booking.notes.includes('[Payment]')) {
-                const noteLines = booking.notes.split('\n');
-                const paymentNote = noteLines.find(line => line.includes('[Payment]'));
-                if (paymentNote) {
-                    paymentInfo = paymentNote;
-                    // Extract plan info
-                    const planMatch = paymentNote.match(/Plan: (\w+)/);
-                    if (planMatch) {
-                        planInfo = planMatch[1];
-                    }
-                }
-            }
-            
-            return {
-                bookingId: booking.id,
-                fullName: booking.full_name,
-                email: booking.email,
-                hospitalName: booking.hospital_name,
-                hospitalPhone: booking.hospital_phone,
-                isPaid,
-                paymentStatus: booking.payment_status || 'not_started',
-                bookingStatus: booking.status,
-                feedbackReceived: booking.feedback_received,
-                paymentInfo,
-                planInfo,
-                createdAt: booking.created_at,
-                updatedAt: booking.updated_at
-            };
-            
-        } catch (error) {
-            logger.error('Error fetching payment status:', error);
-            return null;
-        }
-    }
-
-    // Update payment status
-    static async updatePaymentStatus(bookingId, status) {
-        try {
-            const validStatuses = ['pending', 'completed', 'failed', 'not_started'];
-            if (!validStatuses.includes(status)) {
-                throw new Error('Invalid payment status. Must be one of: pending, completed, failed, not_started');
-            }
-
+            // Update booking with payment status
             const result = await executeQuery(
                 `
                 UPDATE book_demo 
                 SET 
-                    payment_status = $1,
+                    payment_status = 'completed',
+                    status = 'payment_completed',
+                    notes = COALESCE(notes, '') || $1,
                     updated_at = NOW()
                 WHERE id = $2
                 RETURNING *
                 `,
-                [status, bookingId]
+                [
+                    `\n[Payment] Plan: ${planId}, Amount: ${amount} ${currency}, Transaction: ${transactionId}, Date: ${new Date().toISOString()}`,
+                    bookingId
+                ]
             );
 
             if (result.rows.length === 0) {
                 throw new Error('Booking not found');
             }
 
-            logger.info(`✅ Payment status updated to '${status}' for booking #${bookingId}`);
+            await executeQuery('COMMIT');
 
-            return result.rows[0];
+            logger.info(`✅ Static payment recorded for booking #${bookingId} - Plan: ${planId}`);
+
+            return {
+                success: true,
+                bookingId: bookingId,
+                planId: planId,
+                transactionId: transactionId,
+                booking: result.rows[0]
+            };
 
         } catch (error) {
-            logger.error('Error updating payment status:', error);
+            await executeQuery('ROLLBACK');
             throw error;
         }
-    }
-}
 
-module.exports = PaymentService;
+    } catch (error) {
+        logger.error('Error recording static payment:', error);
+        throw error;
+    }
+};
+
+/**
+ * Check payment status with full details
+ */
+exports.getPaymentStatus = async (bookingId) => {
+    try {
+        const result = await executeQuery(
+            `
+            SELECT 
+                id,
+                full_name,
+                email,
+                hospital_name,
+                hospital_phone,
+                status,
+                payment_status,
+                notes,
+                feedback_received,
+                created_at,
+                updated_at
+            FROM book_demo 
+            WHERE id = $1
+            `,
+            [bookingId]
+        );
+
+        if (result.rows.length === 0) {
+            return null;
+        }
+
+        const booking = result.rows[0];
+
+        // Check if payment was completed
+        const isPaid = booking.payment_status === 'completed';
+
+        // Extract payment info from notes if available
+        let paymentInfo = null;
+        let planInfo = null;
+        if (booking.notes && booking.notes.includes('[Payment]')) {
+            const noteLines = booking.notes.split('\n');
+            const paymentNote = noteLines.find(line => line.includes('[Payment]'));
+            if (paymentNote) {
+                paymentInfo = paymentNote;
+                // Extract plan info
+                const planMatch = paymentNote.match(/Plan: (\w+)/);
+                if (planMatch) {
+                    planInfo = planMatch[1];
+                }
+            }
+        }
+
+        return {
+            bookingId: booking.id,
+            fullName: booking.full_name,
+            email: booking.email,
+            hospitalName: booking.hospital_name,
+            hospitalPhone: booking.hospital_phone,
+            isPaid,
+            paymentStatus: booking.payment_status || 'not_started',
+            bookingStatus: booking.status,
+            feedbackReceived: booking.feedback_received,
+            paymentInfo,
+            planInfo,
+            createdAt: booking.created_at,
+            updatedAt: booking.updated_at
+        };
+
+    } catch (error) {
+        logger.error('Error fetching payment status:', error);
+        return null;
+    }
+};
+
+/**
+ * Update payment status
+ */
+exports.updatePaymentStatus = async (bookingId, status) => {
+    try {
+        const validStatuses = ['pending', 'completed', 'failed', 'not_started'];
+        if (!validStatuses.includes(status)) {
+            throw new Error('Invalid payment status. Must be one of: pending, completed, failed, not_started');
+        }
+
+        const result = await executeQuery(
+            `
+            UPDATE book_demo 
+            SET 
+                payment_status = $1,
+                updated_at = NOW()
+            WHERE id = $2
+            RETURNING *
+            `,
+            [status, bookingId]
+        );
+
+        if (result.rows.length === 0) {
+            throw new Error('Booking not found');
+        }
+
+        logger.info(`✅ Payment status updated to '${status}' for booking #${bookingId}`);
+
+        return result.rows[0];
+
+    } catch (error) {
+        logger.error('Error updating payment status:', error);
+        throw error;
+    }
+};
