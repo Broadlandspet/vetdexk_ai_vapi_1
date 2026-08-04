@@ -2,11 +2,6 @@ const { executeQuery } = require('../config/database');
 const logger = require('../utils/logger');
 const env = require('../config/env');
 
-// // Helper to get hospital_id from request
-// const getHospitalId = (req) => {
-//     return req.hospitalId || (req.user && req.user.hospital_id) || null;
-// };
-
 
 // ─── HELPER: Get hospital_id from request (priority: token → query → body) ──
 function getHospitalId(req) {
@@ -30,10 +25,6 @@ function getHospitalId(req) {
 // ============================================
 
 // Get all calls (admin only)
-
-
-
-
 
 exports.getAllCalls = async (req, res) => {
     try {
@@ -139,17 +130,7 @@ exports.getAllCalls = async (req, res) => {
 };
 
 
-
-
-
-
-
-
-
-
 // Get specific call by ID (admin only)
-
-
 exports.getCallById = async (req, res) => {
     try {
         const { id } = req.params;
@@ -595,12 +576,6 @@ exports.getTranscriptionsByCall = async (req, res) => {
 
 // // Get dashboard stats (admin only)
 
-
-
-
-
-
-
 exports.getDashboardStats = async (req, res) => {
     try {
         const hospitalId = getHospitalId(req);
@@ -705,7 +680,7 @@ exports.getDashboardStats = async (req, res) => {
 // RECORDING METHODS
 // ============================================
 
-// Handle OPTIONS preflight for CORS - public, no change
+// // Handle OPTIONS preflight for CORS - public, no change
 exports.handleRecordingOptions = async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -714,7 +689,7 @@ exports.handleRecordingOptions = async (req, res) => {
     res.sendStatus(204);
 };
 
-// Get all recordings with playable links
+// // Get all recordings with playable links
 exports.getAllRecordings = async (req, res) => {
     try {
         const hospitalId = getHospitalId(req);
@@ -1694,11 +1669,6 @@ exports.updatePricingItem = async (req, res) => {
         res.status(500).json({ success: false, error: 'Failed to update service' });
     }
 };
-
-
-
-
-
 
 
 

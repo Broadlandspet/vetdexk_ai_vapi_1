@@ -5,11 +5,27 @@ const { executeQuery, pool } = require('../config/database'); // 👈 added pool
 const logger = require('../utils/logger');
 const moment = require('moment-timezone');
 
+// Import the credential service that handles encryption/decryption
+const { getCredentials: getAiCredentials } = require('./credentialService');
+
+
+
+
+
 // ─── CONSTANTS ──────────────────────────────────────────────────────────
 const DEFAULT_TIMEZONE = process.env.DEFAULT_TIMEZONE || 'America/Chicago';
 const EZY_VET_API_BASE = process.env.EZY_VET_URL || 'https://apiv2.trial.ezyvet.com';
 const TOKEN_URL = process.env.EZY_VET_TOKEN_URL || 'https://api.trial.ezyvet.com/v1/oauth/access_token';
 const EZY_VET_API_BASE_V1 = process.env.EZY_VET_API_BASE_V1 || 'https://api.trial.ezyvet.com';
+
+
+
+
+
+
+
+
+
 
 // ─── IN-MEMORY CACHES ─────────────────────────────────────────────────
 const tokenCache = {};
@@ -77,19 +93,36 @@ const DOCTOR_RESOURCES = [
 
 
 
-// ─── HELPER: GET CREDENTIALS FROM DB ──────────────────────────────────
+// // ─── HELPER: GET CREDENTIALS FROM DB ──────────────────────────────────
+
 exports.getCredentials = async (hospitalId) => {
-    const query = `
-        SELECT partner_id, client_id, client_secret, grant_type, scope, site_uid
-        FROM ezyvet_credentials
-        WHERE hospital_id = $1
-    `;
-    const result = await executeQuery(query, [hospitalId]);
-    if (result.rows.length === 0) {
-        throw new Error(`No ezyVet credentials found for hospital_id ${hospitalId}`);
+    try {
+        // Fetch all credentials (decrypted, with UPPERCASE keys)
+        const allCreds = await getAiCredentials(hospitalId);
+
+        // Map new column names → old expected names
+        return {
+            partner_id: allCreds.EZY_VET_PARTNER_ID,
+            client_id: allCreds.EZY_VET_CLIENT_ID,
+            client_secret: allCreds.EZY_VET_CLIENT_SECRET,
+            grant_type: allCreds.EZY_VET_GRANT_TYPE,
+            scope: allCreds.EZY_VET_SCOPE,
+            site_uid: allCreds.EZY_VET_SITE_UID
+        };
+    } catch (error) {
+        // Preserve the original error message style for consistency
+        if (error.message && error.message.includes('No credentials found')) {
+            throw new Error(`No ezyVet credentials found for hospital_id ${hospitalId}`);
+        }
+        throw error; // rethrow unexpected errors
     }
-    return result.rows[0];
 };
+
+
+
+
+
+
 
 // ─── HELPER: OBTAIN NEW ACCESS TOKEN ──────────────────────────────────
 exports.fetchNewToken = async (credentials) => {

@@ -4,6 +4,11 @@ const router = express.Router();
 const { verifyToken, requireRole } = require('../middleware/auth');
 const superadminController = require('../controllers/superadminController'); // match your actual filename
 
+const credentialController = require('../controllers/credentialController');
+
+
+
+
 router.get(
     '/users',
     verifyToken,
@@ -88,6 +93,49 @@ router.put(
     requireRole(['superadmin']),
     superadminController.rejectUser
 );
+
+
+
+
+// User routes
+router.delete('/users/:id', verifyToken , requireRole(['superadmin']), superadminController.deleteUser);
+ 
+// Hospital routes
+router.delete('/hospitals/:id', verifyToken ,  requireRole(['superadmin']),   superadminController.deleteHospital);
+
+
+
+
+// router.delete('/hospitals/:id', verifyToken ,  requireRole(['superadmin']),   superadminController.deleteHospital);
+
+router.post('/credentials', verifyToken ,  requireRole(['superadmin']), credentialController.saveCredentials);
+
+
+
+// router.post('/credentials-resources', superadminController.createCredentialsResources);
+
+router.post('/credentials-resources', verifyToken ,  requireRole(['superadmin']), superadminController.createCredentialsResources);
+
+
+
+
+
+// Delete via hospital_id in the body — matches your requested path style
+// router.post('/credentials-resources/delete', superadminController.deleteCredentialsResources);
+
+router.post('/credentials-resources/delete', verifyToken ,  requireRole(['superadmin']), superadminController.deleteCredentialsResources);
+
+
+// Also available as a proper REST DELETE with hospital_id as a URL param
+// router.delete('/credentials-resources/:hospitalId', superadminController.deleteCredentialsResources);
+router.delete('/credentials-resources/:hospitalId', verifyToken ,  requireRole(['superadmin']), superadminController.deleteCredentialsResources);
+
+
+
+
+
+router.get('/credentials-resources/:hospitalId', verifyToken ,  requireRole(['superadmin']), credentialController.getCredentials);
+
 
 
 

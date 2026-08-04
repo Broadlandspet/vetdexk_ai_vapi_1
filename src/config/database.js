@@ -231,25 +231,6 @@ const runAppointmentMigration = async () => {
 // ============================================
 // EXPORTS
 // ============================================
-// module.exports = {
-//   // Core
-//   getPgPool,
-//   executeQuery,
-  
-//   // MySQL-compatible wrappers
-//   execute,
-//   getConnection,
-  
-//   // Table management
-//   tableExists,
-//   getAllTables,
-//   createAllTables,
-  
-//   // Migration
-//   runAppointmentMigration,
-  
-// };
-
 
 module.exports = {
   // Core

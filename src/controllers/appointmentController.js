@@ -1,9 +1,12 @@
-
 const db = require('../config/database');
 const calendarService = require('../services/calendarService');
 const slotService = require('../services/slotService');
 const logger = require('../utils/logger');
 const EmailService = require('../services/emailService');
+
+const credentialService = require('../services/credentialService');
+
+
 
 // Helper to extract hospital_id from request (priority: token -> body -> query)
 const getHospitalId = (req) => {
@@ -41,32 +44,59 @@ function formatPhoneNumber(phone) {
     return '+' + cleaned; // fallback
 }
 
-// ─── Internal helper for outbound calls ──────────────────────────────────
+// // ─── Internal helper for outbound calls ──────────────────────────────────
+
+
+
+
 async function _triggerOutboundCall(callData) {
+    const { hospitalId, phoneNumber, appointmentId, patientName, petName, appointmentType, appointmentDate, appointmentTime } = callData;
+
+    if (!hospitalId) {
+        throw new Error('hospital_id is required to initiate an outbound call');
+    }
+
+    // Fetch VAPI feedback credentials from the encrypted table
+    let creds;
+    try {
+        creds = await credentialService.getCredentials(hospitalId);
+    } catch (err) {
+        throw new Error(`No VAPI credentials found for hospital ${hospitalId}: ${err.message}`);
+    }
+
+    const assistantId = creds.VAPI_FEEDBACK_ASSISTANT_ID;
+    const phoneNumberId = creds.VAPI_PHONE_NUMBER_ID;
+    const privateApiKey = creds.VAPI_PRIVATE_API_KEY;
+    const apiBaseUrl = creds.VAPI_API_BASE_URL || process.env.VAPI_API_BASE_URL || 'https://api.vapi.ai';
+
+    if (!assistantId || !phoneNumberId || !privateApiKey) {
+        throw new Error(`Incomplete VAPI feedback credentials for hospital ${hospitalId}`);
+    }
+
     // Format the phone number to E.164 before sending to Vapi
-    const formattedNumber = formatPhoneNumber(callData.phoneNumber);
-    logger.info(`📞 Formatting phone: ${callData.phoneNumber} → ${formattedNumber}`);
+    const formattedNumber = formatPhoneNumber(phoneNumber);
+    logger.info(`📞 Formatting phone: ${phoneNumber} → ${formattedNumber}`);
 
     const vapiPayload = {
-        assistantId: process.env.VAPI_FEEDBACK_ASSISTANT_ID,
-        phoneNumberId: process.env.VAPI_PHONE_NUMBER_ID,
+        assistantId,
+        phoneNumberId,
         customer: { number: formattedNumber },
         assistantOverrides: {
             variableValues: {
-                appointment_id: callData.appointmentId,
-                patient_name: callData.patientName,
-                pet_name: callData.petName,
-                appointment_type: callData.appointmentType,
-                appointment_date: callData.appointmentDate,
-                appointment_time: callData.appointmentTime
+                appointment_id: appointmentId,
+                patient_name: patientName,
+                pet_name: petName,
+                appointment_type: appointmentType,
+                appointment_date: appointmentDate,
+                appointment_time: appointmentTime
             }
         }
     };
 
-    const response = await fetch(`${process.env.VAPI_API_BASE_URL}/call/phone`, {
+    const response = await fetch(`${apiBaseUrl}/call/phone`, {
         method: 'POST',
         headers: {
-            'Authorization': `Bearer ${process.env.VAPI_PRIVATE_API_KEY}`,
+            'Authorization': `Bearer ${privateApiKey}`,
             'Content-Type': 'application/json'
         },
         body: JSON.stringify(vapiPayload)
@@ -80,6 +110,14 @@ async function _triggerOutboundCall(callData) {
     const result = await response.json();
     return { success: true, data: result };
 }
+
+
+
+
+
+
+
+
 
 // ─── EXPORTED CONTROLLER FUNCTIONS ─────────────────────────────────────────────
 
@@ -585,11 +623,6 @@ exports.getAllAppointments = async (req, res, next) => {
 
 
 
-
-
-
-
-
 /**
  * Reschedule an appointment (admin or AI with API key)
  * POST /api/admin/reschedule
@@ -931,6 +964,11 @@ exports.appointmentFeedback = async (req, res, next) => {
  * Initiate an outbound feedback call (admin only)
  * POST /api/admin/feedback-call
  */
+
+
+
+
+
 exports.initiateFeedbackCallDirect = async (req, res, next) => {
     try {
         const hospitalId = getHospitalId(req);
@@ -969,65 +1007,68 @@ exports.initiateFeedbackCallDirect = async (req, res, next) => {
             });
         }
 
-        const vapiPayload = {
-            assistantId: process.env.VAPI_FEEDBACK_ASSISTANT_ID,
-            phoneNumberId: process.env.VAPI_PHONE_NUMBER_ID,
-            customer: { number: phoneNumber },
-            assistantOverrides: {
-                variableValues: {
-                    appointment_id: String(appointmentId),
-                    patient_name: patientName,
-                    pet_name: petName,
-                    appointment_type: appointmentType,
-                    appointment_date: appointmentDate,
-                    appointment_time: appointmentTime
-                }
-            }
-        };
-
-        const vapiResponse = await fetch(`${process.env.VAPI_API_BASE_URL}/call/phone`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${process.env.VAPI_PRIVATE_API_KEY}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(vapiPayload)
+        // Call the helper with hospitalId
+        const result = await _triggerOutboundCall({
+            hospitalId,
+            phoneNumber,
+            appointmentId,
+            patientName,
+            petName,
+            appointmentType,
+            appointmentDate,
+            appointmentTime
         });
 
-        if (!vapiResponse.ok) {
-            const errorText = await vapiResponse.text();
-            console.error('Vapi API error:', errorText);
-            return res.status(vapiResponse.status).json({
+        if (!result.success) {
+            return res.status(500).json({
                 success: false,
                 message: 'Failed to initiate outbound call',
-                error: errorText
+                error: result.error
             });
         }
-
-        const vapiResult = await vapiResponse.json();
 
         return res.status(200).json({
             success: true,
             message: 'Outbound feedback call initiated',
-            data: vapiResult
+            data: result.data
         });
 
     } catch (error) {
         console.error('Error in initiateFeedbackCallDirect:', error);
+        // If the error is from credentialService, return a clear message
+        if (error.message.includes('No VAPI credentials') || error.message.includes('hospital_id is required')) {
+            return res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
         next(error);
     }
 };
 
-/**
- * Cron job: Process pending feedback calls (no admin context, runs globally)
- */
+
+
+
+
+
+
+
+
+
+// /**
+//  * Cron job: Process pending feedback calls (no admin context, runs globally)
+//  */
+
+
 // exports.processPendingFeedbackCalls = async () => {
 //     try {
 //         console.log('🕒 Running feedback call cron job...');
 
 //         const delayMinutes = process.env.FEEDBACK_CALL_DELAY_MINUTES || '2';
+//         console.log(`   Delay (minutes): ${delayMinutes}`);
 
-//         const [rows] = await db.execute(`
+//         // Build the SQL query as a template literal
+//         const query = `
 //             SELECT
 //                 a.id as appointment_id,
 //                 a.appointment_type,
@@ -1044,11 +1085,18 @@ exports.initiateFeedbackCallDirect = async (req, res, next) => {
 //             LEFT JOIN ezy_vet_pets p ON a.pet_id = p.id
 //             WHERE a.status = 'completed'
 //               AND a.appointment_status = 'completed'
-//              AND (a.feedback_call_attempted IS NULL OR a.feedback_call_attempted = 'false')
+//               AND (a.feedback_call_attempted IS NULL OR a.feedback_call_attempted = 'false')
 //               AND a.updated_at <= NOW() - INTERVAL '${delayMinutes} minutes'
 //             ORDER BY a.updated_at ASC
 //             LIMIT 10
-//         `);
+//         `;
+
+//         console.log('   SQL:', query);
+//         console.log('   NOW() =', new Date().toISOString());
+
+//         // Execute the query
+//         const [rows] = await db.execute(query);
+//         console.log(`   Rows returned: ${rows.length}`);
 
 //         if (rows.length === 0) {
 //             console.log('   No pending feedback calls to process');
@@ -1105,6 +1153,9 @@ exports.initiateFeedbackCallDirect = async (req, res, next) => {
 
 
 
+/**
+ * Cron job: Process pending feedback calls (no admin context, runs globally)
+ */
 exports.processPendingFeedbackCalls = async () => {
     try {
         console.log('🕒 Running feedback call cron job...');
@@ -1112,10 +1163,11 @@ exports.processPendingFeedbackCalls = async () => {
         const delayMinutes = process.env.FEEDBACK_CALL_DELAY_MINUTES || '2';
         console.log(`   Delay (minutes): ${delayMinutes}`);
 
-        // Build the SQL query as a template literal
+        // ✅ FIXED: Added a.hospital_id to SELECT
         const query = `
             SELECT
                 a.id as appointment_id,
+                a.hospital_id,                    -- ✅ ADDED
                 a.appointment_type,
                 a.date,
                 a.time,
@@ -1139,7 +1191,6 @@ exports.processPendingFeedbackCalls = async () => {
         console.log('   SQL:', query);
         console.log('   NOW() =', new Date().toISOString());
 
-        // Execute the query
         const [rows] = await db.execute(query);
         console.log(`   Rows returned: ${rows.length}`);
 
@@ -1162,7 +1213,9 @@ exports.processPendingFeedbackCalls = async () => {
             }
             console.log(`   ✅ Gap time (${diffMinutes.toFixed(1)} min) >= 2 min, initiating call`);
 
+            // ✅ FIXED: Added hospitalId to callData
             const callData = {
+                hospitalId: apt.hospital_id,      // ✅ ADDED
                 phoneNumber: apt.phone,
                 patientName: apt.patient_name,
                 petName: apt.pet_name || 'Your pet',

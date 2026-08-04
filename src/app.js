@@ -15,6 +15,11 @@ const adminRoutes = require('./routes/admin');
 const vapiRoutes = require('./routes/vapi');
 const emailRoutes = require('./routes/email');
 
+const contactRoutes = require('./routes/contactRoutes');
+ 
+
+
+
 // NEW: Appointment System Routes
 const appointmentRoutes = require('./routes/appointments');
 const patientRoutes = require('./routes/patients');
@@ -46,6 +51,22 @@ const callerQueryRoutes = require('./routes/callerQueryRoutes');
 
 
 const smsRoutes = require('./routes/sms');
+
+
+const credentialRoutes = require('./routes/credentialRoutes');
+
+
+ 
+const emailSyncService = require('./services/emailSyncService');
+ 
+
+const supportTicketRoutes = require('./routes/supportTicketRoutes');
+ 
+ 
+
+const userSupportRoutes = require('./routes/userSupportRoutes');
+
+
 
 
 const app = express();
@@ -266,6 +287,23 @@ app.use('/api/caller-query', callerQueryRoutes);
 
 
 app.use('/api/sms', smsRoutes);
+
+
+
+
+app.use('/api/contact', contactRoutes);
+
+
+app.use('/api/credentials', credentialRoutes);
+
+
+
+app.use('/api/support', supportTicketRoutes);
+ 
+app.use('/api', userSupportRoutes);
+
+
+
 
 
 // ============================================
@@ -551,6 +589,39 @@ try {
 // ============================================
 // START SERVER
 // ============================================
+
+
+
+// Start email sync service when server starts
+if (process.env.NODE_ENV !== 'test') {
+    // Test connection first
+    const supportEmailService = require('./services/supportEmailService');
+    supportEmailService.testConnection()
+        .then(() => {
+            logger.info('Gmail connection successful, starting sync service...');
+            emailSyncService.start().catch(err => {
+                logger.error('Failed to start email sync service:', err);
+            });
+        })
+        .catch(err => {
+            logger.error('Gmail connection failed. Sync service will not start:', err.message);
+        });
+}
+ 
+// Graceful shutdown
+process.on('SIGTERM', () => {
+    emailSyncService.stop();
+    process.exit(0);
+});
+process.on('SIGINT', () => {
+    emailSyncService.stop();
+    process.exit(0);
+});
+
+
+
+
+
 
 async function startServer() {
   // Run database checks

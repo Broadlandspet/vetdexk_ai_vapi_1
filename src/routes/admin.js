@@ -185,23 +185,6 @@ router.post('/email-config', updateEmailConfig);
 ///////-----caller query-------------///////////
 
 
-
-// // POST /api/caller-query – Save a query
-// router.post('/', callerQueryController.createCallerQuery);   // ← Fixed: createCallerQuery
-
-// // GET /api/caller-query – Get all queries (with filters)
-// router.get('/', callerQueryController.getCallerQueries);
-
-// // GET /api/caller-query/:id – Get a specific query
-// router.get('/:id', callerQueryController.getCallerQueryById);
-
-// // DELETE /api/caller-query/:id – Delete a query
-// router.delete('/:id', callerQueryController.deleteCallerQuery);
-
-
-
-
-
 // ==================== CALLER QUERY ROUTES ====================
 
 // Create a new query
@@ -219,7 +202,10 @@ router.delete('/caller-query/:id', callerQueryController.deleteCallerQuery);
 
 
 
-
+// POST /api/appointments/feedback-call - Initiate outbound feedback call (no DB fetch)
+router.post('/feedback-call', (req, res, next) =>
+    appointmentController.initiateFeedbackCallDirect(req, res, next)
+);
 
 
 module.exports = router;
