@@ -42,10 +42,23 @@ const {
     getEmailLogsStats,
     getEmailConfig,
     updateEmailConfig,
+   createEmailConfig,
+  deleteEmailConfig,
+
     updatePricingCategory,
-    updatePricingItem
+    updatePricingItem,
+
 
 } = require('../controllers/adminController');
+
+
+const credentialService = require('../services/credentialService');
+
+
+const adminController = require('../controllers/adminController');
+
+
+
 
 
 
@@ -53,6 +66,10 @@ const {
 
 
 const callerQueryController = require('../controllers/callerQueryController');
+
+
+const credentialController = require('../controllers/credentialController');
+
 
 
 
@@ -178,6 +195,8 @@ router.post('/email-config', updateEmailConfig);
 
 
 
+router.put('/email-config/:id', updateEmailConfig);
+router.delete('/email-config/:id', deleteEmailConfig);
 
 
 
@@ -206,6 +225,37 @@ router.delete('/caller-query/:id', callerQueryController.deleteCallerQuery);
 router.post('/feedback-call', (req, res, next) =>
     appointmentController.initiateFeedbackCallDirect(req, res, next)
 );
+
+
+
+
+
+
+
+
+
+/////------------------crenditials updation apis ---------------///////
+
+
+
+router.post('/credentials', credentialController.saveCredentials);
+
+// router.get('/credentials-resources/:hospitalId', credentialController.getCredentials);
+// 🔒 Remove the :hospitalId param – the controller will now read it from the token
+// router.get('/credentials-resources', credentialController.getCredentials);
+router.get('/credentials-resources', adminController.getAdminCredentials);
+
+
+
+
+// router.put('/credentials-resources', superadminController.updateCredentials);
+
+
+
+router.put('/credentials-resources', adminController.updateAdminCredentials);
+
+
+
 
 
 module.exports = router;

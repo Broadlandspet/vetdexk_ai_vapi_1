@@ -4,7 +4,7 @@ const userService = require('../services/userService')
 
 const credentialsResourceService = require('../services/credentialsResourceService');
 
-
+const credentialService = require('../services/credentialService');  
 
   // Get all users except Super Admin
 exports.getAllUsers=  async (req, res) => {
@@ -555,6 +555,129 @@ exports.deleteCredentialsResources = async (req, res) => {
             success: false,
             message: error.message || 'Failed to delete credentials resources.',
             data: error.partialResults || null
+        });
+    }
+};
+
+
+
+
+
+
+
+
+
+
+
+
+exports.updateCredentials = async (req, res) => {
+     console.log('⚡⚡⚡ updateCredentials controller called!');
+    try {
+        const hospitalId = req.params.hospitalId || req.body.hospital_id;
+        if (!hospitalId) {
+            return res.status(400).json({
+                success: false,
+                message: 'hospital_id is required in URL or body.'
+            });
+        }
+
+        // Allowed fields for update
+        const allowedFields = [
+            'google_client_id',
+            'google_client_secret',
+            'google_calendar_refresh_token',
+            'google_gmail_refresh_token',
+            'admin_email',
+            'google_email',
+            'ezy_vet_partner_id',
+            'ezy_vet_client_id',
+            'ezy_vet_client_secret',
+            'ezy_vet_grant_type',
+            'ezy_vet_scope',
+            'ezy_vet_site_uid'
+        ];
+
+        // Extract only allowed fields from request body
+        const updateData = {};
+        for (const field of allowedFields) {
+            if (req.body[field] !== undefined) {
+                updateData[field] = req.body[field];
+            }
+        }
+
+        if (Object.keys(updateData).length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'No valid fields provided for update.'
+            });
+        }
+
+        // Perform the update
+        await credentialService.updateCredentialsFields(hospitalId, updateData);
+
+        // Fetch the updated credentials (already returns uppercase keys)
+        const updatedCredentials = await credentialService.getCredentials(hospitalId);
+
+        return res.status(200).json({
+            success: true,
+            message: `Credentials updated for hospital ${hospitalId}.`,
+            data: updatedCredentials
+        });
+
+    } catch (error) {
+        logger.error('Error updating credentials:', error);
+        return res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to update credentials.'
+        });
+    }
+};
+
+
+
+// // ==============================
+// // UPDATE VAPI PHONE NUMBER ID (SUPERADMIN ONLY)
+// // ==============================
+
+// ==============================
+// UPDATE VAPI PHONE NUMBER (SUPERADMIN ONLY)
+// ==============================
+exports.updateVapiPhoneNumber = async (req, res) => {
+     console.log('🔥🔥🔥 updateVapiPhoneNumber controller called!');
+    try {
+        const { hospital_id, vapi_phone_number_id } = req.body;
+
+        if (!hospital_id) {
+            return res.status(400).json({
+                success: false,
+                message: 'hospital_id is required in the body.'
+            });
+        }
+
+        if (!vapi_phone_number_id) {
+            return res.status(400).json({
+                success: false,
+                message: 'vapi_phone_number_id is required in the body.'
+            });
+        }
+
+        // ✅ CORRECT: Use the dedicated function that allows vapi_phone_number_id
+        await credentialService.updateVapiPhoneNumberId(hospital_id, vapi_phone_number_id);
+
+        // Fetch updated credentials
+        const updated = await credentialService.getCredentials(hospital_id);
+
+        return res.status(200).json({
+            success: true,
+            message: `Vapi phone number updated for hospital ${hospital_id}.`,
+            data: updated
+        });
+
+    } catch (error) {
+        logger.error('Error updating Vapi phone number:', error);
+        return res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to update Vapi phone number.'
         });
     }
 };

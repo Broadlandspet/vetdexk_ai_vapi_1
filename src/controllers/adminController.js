@@ -2,23 +2,34 @@ const { executeQuery } = require('../config/database');
 const logger = require('../utils/logger');
 const env = require('../config/env');
 
+const credentialService = require('../services/credentialService');
 
-// ─── HELPER: Get hospital_id from request (priority: token → query → body) ──
+
+
+// // ─── HELPER: Get hospital_id from request (priority: token → query → body) ──
+// function getHospitalId(req) {
+//     // From JWT token / user object
+//     const fromToken = req.hospitalId || (req.user && req.user.hospital_id);
+//     if (fromToken) return fromToken;
+
+//     // From query
+//     const fromQuery = req.query?.hospital_id;
+//     if (fromQuery) return parseInt(fromQuery, 10);
+
+//     // From body
+//     const fromBody = req.body?.hospital_id;
+//     if (fromBody) return parseInt(fromBody, 10);
+     
+//     return null;
+// }
+
 function getHospitalId(req) {
-    // From JWT token / user object
-    const fromToken = req.hospitalId || (req.user && req.user.hospital_id);
-    if (fromToken) return fromToken;
-
-    // From query
-    const fromQuery = req.query?.hospital_id;
-    if (fromQuery) return parseInt(fromQuery, 10);
-
-    // From body
-    const fromBody = req.body?.hospital_id;
-    if (fromBody) return parseInt(fromBody, 10);
-
-    return null;
+    // Only from JWT token / user object – never trust client-provided query/body
+    return req.hospitalId || (req.user && req.user.hospital_id) || null;
 }
+
+
+
 
 // ============================================
 // CALLS MANAGEMENT
@@ -1177,7 +1188,17 @@ exports.audioPlayerPopup = async (req, res) => {
 // WORKING HOURS MANAGEMENT
 // ============================================
 
-// Get all working hours (admin only)
+
+
+
+// NOTE: this is a drop-in replacement for the four exports you shared
+// (getWorkingHours, updateWorkingHours, updateWorkingHourById,
+// updateWorkingHourByDay). Any other exports/requires/helpers in your
+// original file (executeQuery, logger, getHospitalId, etc.) are assumed
+// unchanged — only the bodies of these four functions differ from what
+// you sent, and only where noted with ✅.
+
+// Get all working hours (admin only) — UNCHANGED
 exports.getWorkingHours = async (req, res) => {
     try {
         const hospitalId = getHospitalId(req);
@@ -1186,7 +1207,7 @@ exports.getWorkingHours = async (req, res) => {
         }
 
         const { appointment_type } = req.query;
-        
+
         let query = `
             SELECT id, day_of_week, is_open, open_time, close_time, 
                    appointment_type, slot_duration, created_at, updated_at
@@ -1195,13 +1216,13 @@ exports.getWorkingHours = async (req, res) => {
         `;
         let params = [hospitalId];
         let paramIndex = 2;
-        
+
         if (appointment_type) {
             query += ` AND (appointment_type = $${paramIndex} OR appointment_type = 'all')`;
             params.push(appointment_type);
             paramIndex++;
         }
-        
+
         query += ` ORDER BY 
             CASE day_of_week
                 WHEN 'Monday' THEN 1
@@ -1212,10 +1233,9 @@ exports.getWorkingHours = async (req, res) => {
                 WHEN 'Saturday' THEN 6
                 WHEN 'Sunday' THEN 7
             END`;
-        
+
         const result = await executeQuery(query, params);
-        
-        // Format times for response
+
         const workingHours = (result.rows || []).map(row => ({
             id: row.id,
             day_of_week: row.day_of_week,
@@ -1225,13 +1245,16 @@ exports.getWorkingHours = async (req, res) => {
             appointment_type: row.appointment_type,
             slot_duration: row.slot_duration
         }));
-        
+
+        // ✅ Returns [] for a hospital with zero rows configured — this is
+        // an expected, valid state (see frontend empty-state handling),
+        // not an error.
         res.json({
             success: true,
             data: workingHours,
             count: workingHours.length
         });
-        
+
     } catch (error) {
         logger.error('Error fetching working hours:', error);
         res.status(500).json({
@@ -1250,36 +1273,38 @@ exports.updateWorkingHours = async (req, res) => {
         }
 
         const { working_hours } = req.body;
-        
+
         if (!working_hours || !Array.isArray(working_hours) || working_hours.length === 0) {
             return res.status(400).json({
                 success: false,
                 error: 'working_hours array is required'
             });
         }
-        
+
         const results = [];
         const errors = [];
-        
+
         for (const item of working_hours) {
             const { id, day_of_week, is_open, open_time, close_time, appointment_type, slot_duration } = item;
-            
-            // Validation
+
             if (!id && !day_of_week) {
                 errors.push({ item, error: 'Either id or day_of_week is required' });
                 continue;
             }
-            
+
             if (is_open === true && (!open_time || !close_time)) {
                 errors.push({ item, error: 'open_time and close_time are required when is_open is true' });
                 continue;
             }
-            
+
             try {
                 let result;
-                
+
+                // ✅ UNCHANGED: updating by a specific id must never create a
+                // row. If the client believes a row exists (it's sending an
+                // id), a miss here is a genuine "not found", not a signal to
+                // insert — that stays an error below.
                 if (id) {
-                    // Update by ID – ensure it belongs to the hospital
                     result = await executeQuery(`
                         UPDATE working_hours 
                         SET is_open = $1, 
@@ -1291,22 +1316,30 @@ exports.updateWorkingHours = async (req, res) => {
                         WHERE id = $6 AND hospital_id = $7
                         RETURNING *
                     `, [is_open, open_time, close_time, appointment_type || 'all', slot_duration || 30, id, hospitalId]);
-                    
+
                 } else if (day_of_week) {
-                    // Update by day_of_week – ensure it belongs to the hospital
+                    // ✅ CHANGED: day_of_week-based calls now upsert. This is
+                    // the path the "Add Working Hours" frontend flow uses for
+                    // a day that has no row yet (new hospital, or a day never
+                    // configured before) — it's a legitimate create, not an
+                    // update-miss. Requires the UNIQUE(hospital_id, day_of_week)
+                    // constraint from the migration to be safe under concurrent
+                    ///duplicate submissions.
                     result = await executeQuery(`
-                        UPDATE working_hours 
-                        SET is_open = $1, 
-                            open_time = $2, 
-                            close_time = $3, 
-                            appointment_type = $4,
-                            slot_duration = $5,
+                        INSERT INTO working_hours
+                            (hospital_id, day_of_week, is_open, open_time, close_time, appointment_type, slot_duration, created_at, updated_at)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+                        ON CONFLICT (hospital_id, day_of_week, appointment_type)
+                        DO UPDATE SET
+                            is_open = EXCLUDED.is_open,
+                            open_time = EXCLUDED.open_time,
+                            close_time = EXCLUDED.close_time,
+                            slot_duration = EXCLUDED.slot_duration,
                             updated_at = NOW()
-                        WHERE day_of_week = $6 AND hospital_id = $7
                         RETURNING *
-                    `, [is_open, open_time, close_time, appointment_type || 'all', slot_duration || 30, day_of_week, hospitalId]);
+                    `, [hospitalId, day_of_week, is_open, open_time, close_time, appointment_type || 'all', slot_duration || 30]);
                 }
-                
+
                 if (result.rows.length > 0) {
                     results.push({
                         id: result.rows[0].id,
@@ -1317,15 +1350,18 @@ exports.updateWorkingHours = async (req, res) => {
                         updated: true
                     });
                 } else {
+                    // ✅ Only reachable now via the id-based branch — the
+                    // day_of_week branch always returns a row (insert or
+                    // update) via the upsert above.
                     errors.push({ item, error: 'Working hour entry not found or not owned by this hospital' });
                 }
-                
+
             } catch (itemError) {
                 logger.error(`Error updating working hour: ${itemError.message}`);
                 errors.push({ item, error: itemError.message });
             }
         }
-        
+
         res.json({
             success: errors.length === 0,
             data: {
@@ -1334,7 +1370,7 @@ exports.updateWorkingHours = async (req, res) => {
             },
             message: errors.length === 0 ? 'Working hours updated successfully' : 'Some updates failed'
         });
-        
+
     } catch (error) {
         logger.error('Error updating working hours:', error);
         res.status(500).json({
@@ -1344,7 +1380,9 @@ exports.updateWorkingHours = async (req, res) => {
     }
 };
 
-// Update single working hour by ID (admin only)
+// Update single working hour by ID (admin only) — UNCHANGED
+// Deliberately stays update-only: a client hitting this by id already
+// believes the row exists, so there is nothing sensible to "create".
 exports.updateWorkingHourById = async (req, res) => {
     try {
         const { id } = req.params;
@@ -1354,20 +1392,19 @@ exports.updateWorkingHourById = async (req, res) => {
         }
 
         const { is_open, open_time, close_time, appointment_type, slot_duration } = req.body;
-        
-        if (is_open === undefined && open_time === undefined && close_time === undefined && 
+
+        if (is_open === undefined && open_time === undefined && close_time === undefined &&
             appointment_type === undefined && slot_duration === undefined) {
             return res.status(400).json({
                 success: false,
                 error: 'At least one field to update is required'
             });
         }
-        
-        // Build dynamic update query
+
         const updates = [];
         const values = [];
         let paramIndex = 1;
-        
+
         if (is_open !== undefined) {
             updates.push(`is_open = $${paramIndex++}`);
             values.push(is_open);
@@ -1388,25 +1425,25 @@ exports.updateWorkingHourById = async (req, res) => {
             updates.push(`slot_duration = $${paramIndex++}`);
             values.push(slot_duration);
         }
-        
+
         updates.push(`updated_at = NOW()`);
         values.push(id);
         values.push(hospitalId);
-        
+
         const result = await executeQuery(`
             UPDATE working_hours 
             SET ${updates.join(', ')}
             WHERE id = $${paramIndex} AND hospital_id = $${paramIndex + 1}
             RETURNING *
         `, values);
-        
+
         if (result.rows.length === 0) {
             return res.status(404).json({
                 success: false,
                 error: 'Working hour entry not found or not owned by this hospital'
             });
         }
-        
+
         res.json({
             success: true,
             data: {
@@ -1420,7 +1457,7 @@ exports.updateWorkingHourById = async (req, res) => {
             },
             message: 'Working hour updated successfully'
         });
-        
+
     } catch (error) {
         logger.error('Error updating working hour:', error);
         res.status(500).json({
@@ -1440,7 +1477,7 @@ exports.updateWorkingHourByDay = async (req, res) => {
         }
 
         const { is_open, open_time, close_time, appointment_type, slot_duration } = req.body;
-        
+
         const validDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
         if (!validDays.includes(day)) {
             return res.status(400).json({
@@ -1448,20 +1485,40 @@ exports.updateWorkingHourByDay = async (req, res) => {
                 error: `Invalid day. Must be one of: ${validDays.join(', ')}`
             });
         }
-        
-        if (is_open === undefined && open_time === undefined && close_time === undefined && 
+
+        if (is_open === undefined && open_time === undefined && close_time === undefined &&
             appointment_type === undefined && slot_duration === undefined) {
             return res.status(400).json({
                 success: false,
                 error: 'At least one field to update is required'
             });
         }
-        
-        // Build dynamic update query
+
+        // ✅ CHANGED: this route is single-day by nature (used for edits from
+        // the UI's per-day form) so it now upserts too, for the same reason
+        // as updateWorkingHours' day_of_week branch — a day with no row yet
+        // is a valid "add", not a 404.
+        //
+        // Partial-field updates (only is_open, say) plus a first-time insert
+        // need sane defaults for the columns not provided, since there's no
+        // existing row to fall back on:
+        const insertIsOpen = is_open !== undefined ? is_open : false;
+        const insertOpenTime = open_time !== undefined ? open_time : null;
+        const insertCloseTime = close_time !== undefined ? close_time : null;
+        const insertAppointmentType = appointment_type !== undefined ? appointment_type : 'all';
+        const insertSlotDuration = slot_duration !== undefined ? slot_duration : 30;
+
+        if (insertIsOpen === true && (!insertOpenTime || !insertCloseTime)) {
+            return res.status(400).json({
+                success: false,
+                error: 'open_time and close_time are required when is_open is true'
+            });
+        }
+
         const updates = [];
         const values = [];
         let paramIndex = 1;
-        
+
         if (is_open !== undefined) {
             updates.push(`is_open = $${paramIndex++}`);
             values.push(is_open);
@@ -1482,25 +1539,35 @@ exports.updateWorkingHourByDay = async (req, res) => {
             updates.push(`slot_duration = $${paramIndex++}`);
             values.push(slot_duration);
         }
-        
+
         updates.push(`updated_at = NOW()`);
         values.push(day);
         values.push(hospitalId);
-        
-        const result = await executeQuery(`
+
+        let result = await executeQuery(`
             UPDATE working_hours 
             SET ${updates.join(', ')}
             WHERE day_of_week = $${paramIndex} AND hospital_id = $${paramIndex + 1}
             RETURNING *
         `, values);
-        
+
+        // ✅ NEW: no existing row — create it with the resolved defaults.
         if (result.rows.length === 0) {
-            return res.status(404).json({
-                success: false,
-                error: `Working hours for ${day} not found or not owned by this hospital`
-            });
+            result = await executeQuery(`
+                INSERT INTO working_hours
+                    (hospital_id, day_of_week, is_open, open_time, close_time, appointment_type, slot_duration, created_at, updated_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+                ON CONFLICT (hospital_id, day_of_week, appointment_type)
+                DO UPDATE SET
+                    is_open = EXCLUDED.is_open,
+                    open_time = EXCLUDED.open_time,
+                    close_time = EXCLUDED.close_time,
+                    slot_duration = EXCLUDED.slot_duration,
+                    updated_at = NOW()
+                RETURNING *
+            `, [hospitalId, day, insertIsOpen, insertOpenTime, insertCloseTime, insertAppointmentType, insertSlotDuration]);
         }
-        
+
         res.json({
             success: true,
             data: {
@@ -1514,7 +1581,7 @@ exports.updateWorkingHourByDay = async (req, res) => {
             },
             message: `Working hours for ${day} updated successfully`
         });
-        
+
     } catch (error) {
         logger.error('Error updating working hour:', error);
         res.status(500).json({
@@ -1672,7 +1739,7 @@ exports.updatePricingItem = async (req, res) => {
 
 
 
-// Update pricing (bulk update - categories and items)
+//// Update pricing (bulk update - categories and items)
 exports.updatePricing = async (req, res) => {
     try {
         const hospitalId = getHospitalId(req);
@@ -1978,9 +2045,10 @@ exports.deletePricingItem = async (req, res) => {
     }
 };
 
-// ============================================
-// EMAIL LOGS MANAGEMENT
-// ============================================
+// // ============================================
+// // EMAIL LOGS MANAGEMENT
+// // ============================================
+
 
 // Get all email logs with filtering and pagination
 exports.getEmailLogs = async (req, res) => {
@@ -2082,191 +2150,6 @@ exports.getEmailLogs = async (req, res) => {
     }
 };
 
-// ============================================
-// EMAIL CONFIGURATION
-// ============================================
-
-// Get active email configuration (secrets masked) - hospital-specific
-exports.getEmailConfig = async (req, res) => {
-    try {
-        const hospitalId = getHospitalId(req);
-        if (!hospitalId) {
-            return res.status(403).json({ success: false, error: 'No hospital associated with this admin' });
-        }
-
-        const result = await executeQuery(`
-            SELECT id, type,
-                   smtp_host, smtp_port, smtp_username,
-                   from_email, to_email,
-                   google_client_id, google_email, admin_email, google_redirect_uri,
-                   is_active, created_at, updated_at
-            FROM email_config
-            WHERE hospital_id = $1 AND is_active = true
-            LIMIT 1
-        `, [hospitalId]);
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({
-                success: false,
-                error: 'No active email configuration found for this hospital'
-            });
-        }
-
-        const config = result.rows[0];
-        // Mask sensitive fields
-        if (config.smtp_password) config.smtp_password = '********';
-        if (config.google_client_secret) config.google_client_secret = '********';
-        if (config.google_refresh_token) config.google_refresh_token = '********';
-
-        res.json({
-            success: true,
-            data: config
-        });
-    } catch (error) {
-        logger.error('Error fetching email config:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to fetch email configuration'
-        });
-    }
-};
-
-// Update email configuration (supports both SMTP and Gmail API, upsert by type) - hospital-specific
-exports.updateEmailConfig = async (req, res) => {
-    try {
-        const hospitalId = getHospitalId(req);
-        if (!hospitalId) {
-            return res.status(403).json({ success: false, error: 'No hospital associated with this admin' });
-        }
-
-        const body = req.body;
-        const isSmtp = body.smtp_host !== undefined;
-        const isGmail = body.google_client_id !== undefined;
-
-        if (!isSmtp && !isGmail) {
-            return res.status(400).json({
-                success: false,
-                error: 'Missing required fields: either SMTP or Gmail API fields'
-            });
-        }
-
-        let type, result;
-
-        if (isSmtp) {
-            const {
-                smtp_host,
-                smtp_port,
-                smtp_username,
-                smtp_password,
-                from_email,
-                to_email,
-                is_active = true
-            } = body;
-
-            if (!smtp_host || !smtp_port || !smtp_username || !smtp_password || !from_email || !to_email) {
-                return res.status(400).json({
-                    success: false,
-                    error: 'Missing required SMTP fields'
-                });
-            }
-
-            type = 'smtp';
-
-            // Check if an SMTP config already exists for this hospital
-            const existing = await executeQuery(
-                `SELECT id FROM email_config WHERE type = $1 AND hospital_id = $2 LIMIT 1`,
-                [type, hospitalId]
-            );
-
-            if (existing.rows.length > 0) {
-                // Update existing SMTP config
-                result = await executeQuery(`
-                    UPDATE email_config 
-                    SET smtp_host = $1, smtp_port = $2, smtp_username = $3, smtp_password = $4,
-                        from_email = $5, to_email = $6, is_active = $7, updated_at = NOW()
-                    WHERE type = $8 AND hospital_id = $9
-                    RETURNING id, type, smtp_host, smtp_port, smtp_username, from_email, to_email, is_active
-                `, [smtp_host, smtp_port, smtp_username, smtp_password, from_email, to_email, is_active, type, hospitalId]);
-            } else {
-                // Insert new SMTP config
-                result = await executeQuery(`
-                    INSERT INTO email_config (
-                        type, smtp_host, smtp_port, smtp_username, smtp_password,
-                        from_email, to_email, is_active, hospital_id, created_at, updated_at
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
-                    RETURNING id, type, smtp_host, smtp_port, smtp_username, from_email, to_email, is_active
-                `, [type, smtp_host, smtp_port, smtp_username, smtp_password, from_email, to_email, is_active, hospitalId]);
-            }
-
-        } else if (isGmail) {
-            const {
-                google_client_id,
-                google_client_secret,
-                google_refresh_token,
-                google_email,
-                admin_email,
-                google_redirect_uri,
-                is_active = true
-            } = body;
-
-            if (!google_client_id || !google_client_secret || !google_refresh_token || !google_email || !admin_email) {
-                return res.status(400).json({
-                    success: false,
-                    error: 'Missing required Gmail API fields'
-                });
-            }
-
-            type = 'gmail';
-
-            // Check if a Gmail config already exists for this hospital
-            const existing = await executeQuery(
-                `SELECT id FROM email_config WHERE type = $1 AND hospital_id = $2 LIMIT 1`,
-                [type, hospitalId]
-            );
-
-            if (existing.rows.length > 0) {
-                result = await executeQuery(`
-                    UPDATE email_config 
-                    SET google_client_id = $1, google_client_secret = $2, google_refresh_token = $3,
-                        google_email = $4, admin_email = $5, google_redirect_uri = $6,
-                        is_active = $7, updated_at = NOW()
-                    WHERE type = $8 AND hospital_id = $9
-                    RETURNING id, type, google_client_id, google_email, admin_email, google_redirect_uri, is_active
-                `, [google_client_id, google_client_secret, google_refresh_token, google_email, admin_email, google_redirect_uri, is_active, type, hospitalId]);
-            } else {
-                result = await executeQuery(`
-                    INSERT INTO email_config (
-                        type, google_client_id, google_client_secret, google_refresh_token,
-                        google_email, admin_email, google_redirect_uri, is_active, hospital_id, created_at, updated_at
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
-                    RETURNING id, type, google_client_id, google_email, admin_email, google_redirect_uri, is_active
-                `, [type, google_client_id, google_client_secret, google_refresh_token, google_email, admin_email, google_redirect_uri, is_active, hospitalId]);
-            }
-        }
-
-        // After updating/inserting, if the new config is active, deactivate all other configs of the same type for this hospital
-        if (result && result.rows[0] && result.rows[0].is_active === true) {
-            await executeQuery(`
-                UPDATE email_config 
-                SET is_active = false 
-                WHERE id != $1 AND type = $2 AND hospital_id = $3
-            `, [result.rows[0].id, type, hospitalId]);
-        }
-
-        res.json({
-            success: true,
-            data: result.rows[0],
-            message: 'Email configuration saved successfully'
-        });
-    } catch (error) {
-        logger.error('Error updating email config:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to update email configuration'
-        });
-    }
-};
-
 // Get email logs statistics (for admin dashboard) - hospital-specific
 exports.getEmailLogsStats = async (req, res) => {
     try {
@@ -2310,6 +2193,427 @@ exports.getEmailLogsStats = async (req, res) => {
         res.status(500).json({
             success: false,
             error: 'Failed to fetch email logs statistics'
+        });
+    }
+};
+
+// ============================================
+// EMAIL CONFIGURATION
+// ============================================
+// Placeholder shown to the client instead of real secrets. Must match the
+// frontend's SECRET_MASK constant exactly — updateEmailConfig uses this
+// value to detect "user didn't change this field, keep the old secret".
+const SECRET_MASK = '••••••••';
+
+// Small helper: given a raw DB value, decide what to send to the client
+// (mask if present, null if not set at all).
+const maskIfPresent = (value) => (value ? SECRET_MASK : null);
+
+// Get active email configuration (secrets masked) - hospital-specific
+exports.getEmailConfig = async (req, res) => {
+    try {
+        const hospitalId = getHospitalId(req);
+        if (!hospitalId) {
+            return res.status(403).json({ success: false, error: 'No hospital associated with this admin' });
+        }
+
+        const result = await executeQuery(`
+            SELECT id, type,
+                   smtp_host, smtp_port, smtp_username, smtp_password,
+                   from_email, to_email,
+                   google_client_id, google_client_secret, google_refresh_token,
+                   google_email, admin_email, google_redirect_uri,
+                   is_active, created_at, updated_at
+            FROM email_config
+            WHERE hospital_id = $1 AND is_active = true
+            ORDER BY updated_at DESC
+            LIMIT 1
+        `, [hospitalId]);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'No active email configuration found for this hospital'
+            });
+        }
+
+        const config = result.rows[0];
+
+        // Mask secrets — never send the real value back to the client.
+        config.smtp_password = maskIfPresent(config.smtp_password);
+        config.google_client_secret = maskIfPresent(config.google_client_secret);
+        config.google_refresh_token = maskIfPresent(config.google_refresh_token);
+
+        res.json({
+            success: true,
+            data: config
+        });
+    } catch (error) {
+        logger.error('Error fetching email config:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch email configuration'
+        });
+    }
+};
+
+// Create a new email configuration - hospital-specific
+// One config per hospital+type, enforced by a DB unique constraint.
+exports.createEmailConfig = async (req, res) => {
+    try {
+        const hospitalId = getHospitalId(req);
+        if (!hospitalId) {
+            return res.status(403).json({ success: false, error: 'No hospital associated with this admin' });
+        }
+
+        const body = req.body;
+        const isSmtp = body.smtp_host !== undefined;
+        const isGmail = body.google_client_id !== undefined;
+
+        if (!isSmtp && !isGmail) {
+            return res.status(400).json({
+                success: false,
+                error: 'Missing required fields: either SMTP or Gmail API fields'
+            });
+        }
+
+        let type, result;
+
+        if (isSmtp) {
+            const {
+                smtp_host,
+                smtp_port,
+                smtp_username,
+                smtp_password,
+                from_email,
+                to_email,
+                is_active = true
+            } = body;
+
+            if (!smtp_host || !smtp_port || !smtp_username || !smtp_password || !from_email || !to_email) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Missing required SMTP fields'
+                });
+            }
+
+            type = 'smtp';
+
+            result = await executeQuery(`
+                INSERT INTO email_config (
+                    type, smtp_host, smtp_port, smtp_username, smtp_password,
+                    from_email, to_email, is_active, hospital_id, created_at, updated_at
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+                RETURNING id, type, smtp_host, smtp_port, smtp_username, from_email, to_email, is_active
+            `, [type, smtp_host, smtp_port, smtp_username, smtp_password, from_email, to_email, is_active, hospitalId]);
+
+        } else {
+            const {
+                google_client_id,
+                google_client_secret,
+                google_refresh_token,
+                google_email,
+                admin_email,
+                google_redirect_uri,
+                is_active = true
+            } = body;
+
+            if (!google_client_id || !google_client_secret || !google_refresh_token || !google_email || !admin_email) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Missing required Gmail API fields'
+                });
+            }
+
+            type = 'gmail';
+
+            result = await executeQuery(`
+                INSERT INTO email_config (
+                    type, google_client_id, google_client_secret, google_refresh_token,
+                    google_email, admin_email, google_redirect_uri, is_active, hospital_id, created_at, updated_at
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+                RETURNING id, type, google_client_id, google_email, admin_email, google_redirect_uri, is_active
+            `, [type, google_client_id, google_client_secret, google_refresh_token, google_email, admin_email, google_redirect_uri || null, is_active, hospitalId]);
+        }
+
+        const newRow = result.rows[0];
+
+        // If this new config is active, deactivate every OTHER config for
+        // this hospital regardless of type — only one config should be
+        // "the" active one at a time.
+        if (newRow.is_active === true) {
+            await executeQuery(`
+                UPDATE email_config
+                SET is_active = false
+                WHERE id != $1 AND hospital_id = $2
+            `, [newRow.id, hospitalId]);
+        }
+
+        res.status(201).json({
+            success: true,
+            data: newRow,
+            message: 'Email configuration created successfully'
+        });
+    } catch (error) {
+        // Unique constraint violation = a config of this type already exists
+        // for this hospital.
+        if (error.code === '23505') {
+            return res.status(409).json({
+                success: false,
+                error: 'A configuration of this type already exists for your hospital. Edit the existing one instead.'
+            });
+        }
+        logger.error('Error creating email config:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to create email configuration'
+        });
+    }
+};
+
+// Update an existing email configuration by id - hospital-specific
+// Secret fields: if omitted or equal to SECRET_MASK, the old value is kept.
+exports.updateEmailConfig = async (req, res) => {
+    try {
+        const hospitalId = getHospitalId(req);
+        if (!hospitalId) {
+            return res.status(403).json({ success: false, error: 'No hospital associated with this admin' });
+        }
+
+        const { id } = req.params;
+        const body = req.body;
+
+        // Load the existing row, scoped to this hospital, so we know its
+        // type and can fall back to its current secret values.
+        const existingResult = await executeQuery(
+            `SELECT * FROM email_config WHERE id = $1 AND hospital_id = $2 LIMIT 1`,
+            [id, hospitalId]
+        );
+
+        if (existingResult.rows.length === 0) {
+            return res.status(404).json({ success: false, error: 'Email configuration not found' });
+        }
+
+        const existing = existingResult.rows[0];
+        const type = existing.type;
+        let result;
+
+        // Use the new value unless it's blank or the mask placeholder, in
+        // which case keep whatever is already in the DB.
+        const keepIfUnset = (incoming, current) =>
+            (incoming === undefined || incoming === '' || incoming === SECRET_MASK) ? current : incoming;
+
+        if (type === 'smtp') {
+            const smtp_host = body.smtp_host ?? existing.smtp_host;
+            const smtp_port = body.smtp_port ?? existing.smtp_port;
+            const smtp_username = body.smtp_username ?? existing.smtp_username;
+            const smtp_password = keepIfUnset(body.smtp_password, existing.smtp_password);
+            const from_email = body.from_email ?? existing.from_email;
+            const to_email = body.to_email ?? existing.to_email;
+            const is_active = body.is_active ?? existing.is_active;
+
+            if (!smtp_host || !smtp_port || !smtp_username || !smtp_password || !from_email || !to_email) {
+                return res.status(400).json({ success: false, error: 'Missing required SMTP fields' });
+            }
+
+            result = await executeQuery(`
+                UPDATE email_config 
+                SET smtp_host = $1, smtp_port = $2, smtp_username = $3, smtp_password = $4,
+                    from_email = $5, to_email = $6, is_active = $7, updated_at = NOW()
+                WHERE id = $8 AND hospital_id = $9
+                RETURNING id, type, smtp_host, smtp_port, smtp_username, from_email, to_email, is_active
+            `, [smtp_host, smtp_port, smtp_username, smtp_password, from_email, to_email, is_active, id, hospitalId]);
+
+        } else {
+            const google_client_id = body.google_client_id ?? existing.google_client_id;
+            const google_client_secret = keepIfUnset(body.google_client_secret, existing.google_client_secret);
+            const google_refresh_token = keepIfUnset(body.google_refresh_token, existing.google_refresh_token);
+            const google_email = body.google_email ?? existing.google_email;
+            const admin_email = body.admin_email ?? existing.admin_email;
+            const google_redirect_uri = body.google_redirect_uri ?? existing.google_redirect_uri;
+            const is_active = body.is_active ?? existing.is_active;
+
+            if (!google_client_id || !google_client_secret || !google_refresh_token || !google_email || !admin_email) {
+                return res.status(400).json({ success: false, error: 'Missing required Gmail API fields' });
+            }
+
+            result = await executeQuery(`
+                UPDATE email_config 
+                SET google_client_id = $1, google_client_secret = $2, google_refresh_token = $3,
+                    google_email = $4, admin_email = $5, google_redirect_uri = $6,
+                    is_active = $7, updated_at = NOW()
+                WHERE id = $8 AND hospital_id = $9
+                RETURNING id, type, google_client_id, google_email, admin_email, google_redirect_uri, is_active
+            `, [google_client_id, google_client_secret, google_refresh_token, google_email, admin_email, google_redirect_uri, is_active, id, hospitalId]);
+        }
+
+        const updatedRow = result.rows[0];
+
+        // Same "only one active config per hospital" rule as create.
+        if (updatedRow.is_active === true) {
+            await executeQuery(`
+                UPDATE email_config 
+                SET is_active = false 
+                WHERE id != $1 AND hospital_id = $2
+            `, [updatedRow.id, hospitalId]);
+        }
+
+        res.json({
+            success: true,
+            data: updatedRow,
+            message: 'Email configuration updated successfully'
+        });
+    } catch (error) {
+        logger.error('Error updating email config:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to update email configuration'
+        });
+    }
+};
+
+// Delete an email configuration by id - hospital-specific
+exports.deleteEmailConfig = async (req, res) => {
+    try {
+        const hospitalId = getHospitalId(req);
+        if (!hospitalId) {
+            return res.status(403).json({ success: false, error: 'No hospital associated with this admin' });
+        }
+
+        const { id } = req.params;
+
+        const result = await executeQuery(
+            `DELETE FROM email_config WHERE id = $1 AND hospital_id = $2 RETURNING id`,
+            [id, hospitalId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ success: false, error: 'Email configuration not found' });
+        }
+
+        res.json({ success: true, message: 'Email configuration deleted successfully' });
+    } catch (error) {
+        logger.error('Error deleting email config:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to delete email configuration'
+        });
+    }
+};
+
+
+
+
+
+
+// ==============================
+// UPDATE CREDENTIALS (ADMIN ONLY)
+// ==============================
+exports.updateAdminCredentials = async (req, res) => {
+    try {
+        // Get hospitalId from token (set by auth middleware)
+        const hospitalId = req.hospitalId || (req.user && req.user.hospital_id);
+        if (!hospitalId) {
+            return res.status(400).json({
+                success: false,
+                message: 'Hospital ID not found in token. Please ensure you are logged in as an admin.'
+            });
+        }
+
+        // Allowed fields (same as superadmin)
+        const allowedFields = [
+            'google_client_id',
+            'google_client_secret',
+            'google_calendar_refresh_token',
+            'google_gmail_refresh_token',
+            'admin_email',
+            'google_email',
+            'ezy_vet_partner_id',
+            'ezy_vet_client_id',
+            'ezy_vet_client_secret',
+            'ezy_vet_grant_type',
+            'ezy_vet_scope',
+            'ezy_vet_site_uid'
+        ];
+
+        const updateData = {};
+        for (const field of allowedFields) {
+            if (req.body[field] !== undefined) {
+                updateData[field] = req.body[field];
+            }
+        }
+
+        if (Object.keys(updateData).length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'No valid fields provided for update.'
+            });
+        }
+
+        // Perform the update
+        await credentialService.updateCredentialsFields(hospitalId, updateData);
+
+        // Fetch updated credentials (uppercase keys)
+        const updatedCredentials = await credentialService.getCredentials(hospitalId);
+
+        return res.status(200).json({
+            success: true,
+            message: `Credentials updated successfully.`,
+            data: updatedCredentials
+        });
+
+    } catch (error) {
+        console.error('Error updating credentials (admin):', error);
+        return res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to update credentials.'
+        });
+    }
+};
+
+
+
+
+
+exports.getAdminCredentials = async (req, res) => {
+    try {
+        // Get hospitalId from token (set by auth middleware)
+        const hospitalId = req.hospitalId || (req.user && req.user.hospital_id);
+        if (!hospitalId) {
+            return res.status(403).json({
+                success: false,
+                error: 'No hospital associated with this admin'
+            });
+        }
+
+        // Fetch full credentials (decrypted)
+        const decryptedData = await credentialService.getCredentials(hospitalId);
+
+        // Extract only the fields we want
+        const filteredData = {
+            HOSPITAL_ID: decryptedData.HOSPITAL_ID,
+            HOSPITAL_NAME: decryptedData.HOSPITAL_NAME,
+            ADMIN_EMAIL: decryptedData.ADMIN_EMAIL
+        };
+
+        res.json({
+            success: true,
+            data: filteredData
+        });
+
+    } catch (error) {
+        console.error('Error in getAdminCredentials:', error);
+
+        if (error.message && error.message.includes('No credentials found')) {
+            return res.status(404).json({
+                success: false,
+                error: error.message
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            error: 'Failed to retrieve admin credentials.'
         });
     }
 };

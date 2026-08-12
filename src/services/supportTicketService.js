@@ -12,6 +12,15 @@ class SupportTicketService {
         return `TICKET-${year}${month}${day}-${random}`;
     }
 
+
+async updateReplyMessage(replyId, message) {
+    const result = await executeQuery(
+        `UPDATE support_replies SET message = $1 WHERE id = $2 RETURNING *`,
+        [message, replyId]
+    );
+    return result.rows[0] || null;
+}
+
 /**
  * ✅ NEW: Get attachments for a ticket
  */
@@ -23,6 +32,15 @@ async getAttachmentsByTicket(ticketId) {
         [ticketId]
     );
     return result.rows;
+}
+
+async getReplyByGmailMessageId(messageId) {
+    if (!messageId) return null;
+    const result = await executeQuery(
+        `SELECT * FROM support_replies WHERE gmail_message_id = $1`,
+        [messageId]
+    );
+    return result.rows[0] || null;
 }
 
 /**
@@ -68,6 +86,7 @@ async getTicketById(id) {
     
     return ticket;
 }
+
 
 
 
@@ -201,6 +220,38 @@ async addReply(data) {
         return result.rows[0] || null;
     }
 
+// supportTicketService.js
+async updateReplyEmailInfo(replyId, { gmailApiMessageId, rfcMessageId }) {
+    const result = await executeQuery(
+        `UPDATE support_replies
+         SET gmail_message_id = COALESCE($1, gmail_message_id),
+             email_rfc_message_id = COALESCE($2, email_rfc_message_id)
+         WHERE id = $3
+         RETURNING *`,
+        [gmailApiMessageId, rfcMessageId, replyId]
+    );
+    return result.rows[0] || null;
+}
+
+
+/**
+ * ✅ RACE GUARD: Returns true if a reply of this type was added to the ticket
+ * within the last `windowSeconds` — used to detect "we just added this via the
+ * dashboard/API, don't add it again from a synced/pushed Gmail copy of the same send."
+ */
+async hasRecentSimilarReply(ticketId, replyType, windowSeconds = 120) {
+    const result = await executeQuery(
+        `SELECT 1 FROM support_replies
+         WHERE ticket_id = $1 AND reply_type = $2
+           AND created_at >= NOW() - ($3 || ' seconds')::interval
+         LIMIT 1`,
+        [ticketId, replyType, windowSeconds]
+    );
+    return result.rows.length > 0;
+}
+
+
+
     async findTicketByMessageId(messageId) {
         if (!messageId) return null;
         const result = await executeQuery(
@@ -223,8 +274,7 @@ async addReply(data) {
         );
         return result.rows[0] || null;
     }
-
-    async isEmailProcessed(messageId) {
+async isEmailProcessed(messageId) {
         const result = await executeQuery(
             `SELECT 1 FROM processed_emails WHERE gmail_message_id = $1`,
             [messageId]
@@ -235,9 +285,26 @@ async addReply(data) {
     async markEmailProcessed(messageId, ticketId = null) {
         await executeQuery(
             `INSERT INTO processed_emails (gmail_message_id, ticket_id) VALUES ($1, $2)
-             ON CONFLICT (gmail_message_id) DO NOTHING`,
+             ON CONFLICT (gmail_message_id) DO UPDATE
+                SET ticket_id = COALESCE(processed_emails.ticket_id, EXCLUDED.ticket_id)`,
             [messageId, ticketId]
         );
+    }
+
+    /**
+     * ✅ ATOMIC CLAIM — fixes the race between webhook / sync / dashboard-reply
+     * all touching the same Gmail message at once. INSERT...ON CONFLICT DO
+     * NOTHING is atomic at the DB level: if two callers race, only ONE gets
+     * rows.length > 0 back. Only that one is allowed to create the reply.
+     */
+    async claimEmailProcessing(messageId, ticketId = null) {
+        const result = await executeQuery(
+            `INSERT INTO processed_emails (gmail_message_id, ticket_id) VALUES ($1, $2)
+             ON CONFLICT (gmail_message_id) DO NOTHING
+             RETURNING gmail_message_id`,
+            [messageId, ticketId]
+        );
+        return result.rows.length > 0; // true = we won the race
     }
 
     async findRecentDuplicateTicket({ user_email, subject, message, windowSeconds = 30 }) {

@@ -29,8 +29,14 @@ router.get('/email/:email', verifyToken, requireRole(['superadmin']), BookDemoCo
 
 // GET /api/demo/:id - Get a specific booking
 router.get('/:id', verifyToken, requireRole(['superadmin']), BookDemoController.getBookingById);
+// ✅ CORRECT - Specific route first
+router.get('/schedule/:token', BookDemoController.redirectToScheduling);
+router.get('/:id', verifyToken, requireRole(['superadmin']), BookDemoController.getBookingById);
 
-// PUT /api/demo/booking/:id/status - Update booking status
+// ❌ WRONG - This would try to parse "schedule" as an ID
+router.get('/:id', verifyToken, requireRole(['superadmin']), BookDemoController.getBookingById);
+
+router.get('/schedule/:token', BookDemoController.redirectToScheduling); // This would NEVER be reached!
 router.put('/booking/:id/status', verifyToken, requireRole(['superadmin']), BookDemoController.updateBookingStatus);
 
 // DELETE /api/demo/:id - Delete a booking

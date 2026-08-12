@@ -1,380 +1,17 @@
-// // // const supportTicketService = require('../services/supportTicketService');
-// // // const supportEmailService = require('../services/supportEmailService');
-// // // const logger = require('../utils/logger');
-
-// // // // ─── List all tickets (with filters) ──────────────────────────
-// // // exports.listTickets = async (req, res) => {
-// // //     try {
-// // //         const { 
-// // //             status, 
-// // //             priority, 
-// // //             search, 
-// // //             source,
-// // //             page = 1, 
-// // //             limit = 20 
-// // //         } = req.query;
-        
-// // //         const offset = (parseInt(page) - 1) * parseInt(limit);
-
-// // //         const result = await supportTicketService.listTickets({
-// // //             status,
-// // //             priority,
-// // //             search,
-// // //             source,
-// // //             limit: parseInt(limit),
-// // //             offset
-// // //         });
-
-// // //         return res.status(200).json({
-// // //             success: true,
-// // //             data: result.data,
-// // //             pagination: result.pagination
-// // //         });
-
-// // //     } catch (error) {
-// // //         logger.error('Error listing tickets:', error);
-// // //         return res.status(500).json({
-// // //             success: false,
-// // //             message: 'Failed to fetch tickets',
-// // //             error: error.message
-// // //         });
-// // //     }
-// // // };
-
-// // // // ─── Get a single ticket with replies ────────────────────────
-// // // exports.getTicket = async (req, res) => {
-// // //     try {
-// // //         const { id } = req.params;
-// // //         const ticket = await supportTicketService.getTicketById(id);
-        
-// // //         if (!ticket) {
-// // //             return res.status(404).json({
-// // //                 success: false,
-// // //                 message: 'Ticket not found'
-// // //             });
-// // //         }
-        
-// // //         return res.status(200).json({
-// // //             success: true,
-// // //             data: ticket
-// // //         });
-// // //     } catch (error) {
-// // //         logger.error('Error getting ticket:', error);
-// // //         return res.status(500).json({
-// // //             success: false,
-// // //             message: 'Failed to fetch ticket'
-// // //         });
-// // //     }
-// // // };
-
-// // // // controllers/supportTicketController.js
-
-// // // // ─── Reply to a ticket ────────────────────────────────────────
-// // // exports.replyToTicket = async (req, res) => {
-// // //     try {
-// // //         const { id } = req.params;
-// // //         const { message, is_internal = false } = req.body;
-// // //         const adminId = req.userId;
-
-// // //         if (!message || message.trim() === '') {
-// // //             return res.status(400).json({
-// // //                 success: false,
-// // //                 message: 'Reply message is required'
-// // //             });
-// // //         }
-
-// // //         const ticket = await supportTicketService.getTicketById(id);
-// // //         if (!ticket) {
-// // //             return res.status(404).json({
-// // //                 success: false,
-// // //                 message: 'Ticket not found'
-// // //             });
-// // //         }
-
-// // //         const adminEmail = req.user?.email || req.userEmail || 'rajdevfree2@gmail.com';
-// // //         const adminName = req.user?.name || req.userName || 'Admin';
-
-// // //         // Save admin reply
-// // //         const reply = await supportTicketService.addReply({
-// // //             ticket_id: id,
-// // //             reply_type: 'admin',
-// // //             sender_email: adminEmail,
-// // //             sender_name: adminName,
-// // //             message: message.trim(),
-// // //             is_internal: is_internal
-// // //         });
-
-// // //         if (!['resolved', 'closed'].includes(ticket.status)) {
-// // //             await supportTicketService.updateStatus(id, 'in_progress');
-// // //         }
-
-// // //         if (!is_internal) {
-// // //             const subject = `Re: ${ticket.subject} [${ticket.ticket_number}]`;
-// // //             const html = `
-// // //                 <html>
-// // //                 <body>
-// // //                     <p>Hello ${ticket.user_name || 'User'},</p>
-// // //                     <div style="background-color: #f8f9fa; padding: 15px; border-left: 4px solid #007bff; margin: 10px 0;">
-// // //                         <p>${message.trim().replace(/\n/g, '<br>')}</p>
-// // //                     </div>
-// // //                     <p>Reply to this email to continue the conversation.</p>
-// // //                     <hr>
-// // //                     <p style="color:#6c757d;font-size:12px;">
-// // //                         Ticket #${ticket.ticket_number}
-// // //                     </p>
-// // //                 </body>
-// // //                 </html>
-// // //             `;
-
-// // //             // ✅ Use proper RFC822 Message-ID
-// // //             const emailResult = await supportEmailService.sendEmailReply({
-// // //                 to: ticket.user_email,
-// // //                 subject,
-// // //                 html,
-// // //                 inReplyToMessageId: ticket.email_rfc_message_id,
-// // //                 referencesChain: ticket.email_references,
-// // //                 threadId: ticket.gmail_thread_id,
-// // //                 ticketNumber: ticket.ticket_number
-// // //             });
-
-// // //             // ✅ Save all email info
-// // //             if (emailResult) {
-// // //                 await supportTicketService.updateTicketEmailInfo(ticket.id, {
-// // //                     gmailApiMessageId: emailResult.gmailApiMessageId,
-// // //                     rfcMessageId: emailResult.rfcMessageId,
-// // //                     references: emailResult.references,
-// // //                     gmailThreadId: emailResult.threadId
-// // //                 });
-// // //             }
-
-// // //             logger.info(`✅ Admin reply sent to ${ticket.user_email} for ticket ${ticket.ticket_number}`);
-// // //         }
-
-// // //         return res.status(200).json({
-// // //             success: true,
-// // //             message: 'Reply sent successfully',
-// // //             data: reply
-// // //         });
-
-// // //     } catch (error) {
-// // //         logger.error('Error replying to ticket:', error);
-// // //         return res.status(500).json({
-// // //             success: false,
-// // //             message: 'Failed to send reply',
-// // //             error: error.message
-// // //         });
-// // //     }
-// // // };
-
-
-
-// // // exports.manualSyncSent = async (req, res) => {
-// // //     try {
-// // //         const emailSyncService = require('../services/emailSyncService');
-// // //         await emailSyncService.syncSentEmails();
-// // //         return res.status(200).json({
-// // //             success: true,
-// // //             message: 'Sent emails sync completed'
-// // //         });
-// // //     } catch (error) {
-// // //         logger.error('Error during sent emails sync:', error);
-// // //         return res.status(500).json({
-// // //             success: false,
-// // //             message: 'Sent emails sync failed'
-// // //         });
-// // //     }
-// // // };
-
-// // // // ─── Update ticket status ─────────────────────────────────────
-// // // exports.updateTicketStatus = async (req, res) => {
-// // //     try {
-// // //         const { id } = req.params;
-// // //         const { status } = req.body;
-
-// // //         const validStatuses = ['pending', 'in_progress', 'resolved', 'closed'];
-// // //         if (!validStatuses.includes(status)) {
-// // //             return res.status(400).json({
-// // //                 success: false,
-// // //                 message: 'Invalid status. Allowed: pending, in_progress, resolved, closed'
-// // //             });
-// // //         }
-
-// // //         const ticket = await supportTicketService.updateStatus(id, status);
-// // //         if (!ticket) {
-// // //             return res.status(404).json({
-// // //                 success: false,
-// // //                 message: 'Ticket not found'
-// // //             });
-// // //         }
-
-// // //         // If resolved, send resolution email
-// // //         if (status === 'resolved') {
-// // //             const subject = `Your ticket has been resolved [${ticket.ticket_number}]`;
-// // //             const html = `
-// // //                 <html>
-// // //                 <body>
-// // //                     <p>Hello ${ticket.user_name || 'User'},</p>
-// // //                     <p>Your ticket "<strong>${ticket.subject}</strong>" has been marked as resolved.</p>
-// // //                     <p>If you are not satisfied, simply reply to this email and we will reopen it.</p>
-// // //                     <hr>
-// // //                     <p style="color:#6c757d;font-size:12px;">Ticket #${ticket.ticket_number}</p>
-// // //                 </body>
-// // //                 </html>
-// // //             `;
-// // //             await supportEmailService.sendEmailReply({
-// // //                 to: ticket.user_email,
-// // //                 subject,
-// // //                 html,
-// // //                 inReplyTo: ticket.gmail_message_id,
-// // //                 threadId: ticket.gmail_thread_id
-// // //             });
-// // //         }
-
-// // //         return res.status(200).json({
-// // //             success: true,
-// // //             message: `Ticket status updated to ${status}`,
-// // //             data: ticket
-// // //         });
-
-// // //     } catch (error) {
-// // //         logger.error('Error updating ticket status:', error);
-// // //         return res.status(500).json({
-// // //             success: false,
-// // //             message: 'Failed to update status'
-// // //         });
-// // //     }
-// // // };
-
-// // // // ─── Update ticket priority ──────────────────────────────────
-// // // exports.updateTicketPriority = async (req, res) => {
-// // //     try {
-// // //         const { id } = req.params;
-// // //         const { priority } = req.body;
-
-// // //         const valid = ['low', 'medium', 'high'];
-// // //         if (!valid.includes(priority)) {
-// // //             return res.status(400).json({
-// // //                 success: false,
-// // //                 message: 'Invalid priority. Allowed: low, medium, high'
-// // //             });
-// // //         }
-
-// // //         const ticket = await supportTicketService.updatePriority(id, priority);
-// // //         if (!ticket) {
-// // //             return res.status(404).json({
-// // //                 success: false,
-// // //                 message: 'Ticket not found'
-// // //             });
-// // //         }
-
-// // //         return res.status(200).json({
-// // //             success: true,
-// // //             message: `Ticket priority updated to ${priority}`,
-// // //             data: ticket
-// // //         });
-
-// // //     } catch (error) {
-// // //         logger.error('Error updating ticket priority:', error);
-// // //         return res.status(500).json({
-// // //             success: false,
-// // //             message: 'Failed to update priority'
-// // //         });
-// // //     }
-// // // };
-
-// // // // ─── Assign ticket to admin ──────────────────────────────────
-// // // exports.assignTicket = async (req, res) => {
-// // //     try {
-// // //         const { id } = req.params;
-// // //         const { admin_id } = req.body;
-
-// // //         if (!admin_id) {
-// // //             return res.status(400).json({
-// // //                 success: false,
-// // //                 message: 'admin_id is required'
-// // //             });
-// // //         }
-
-// // //         const ticket = await supportTicketService.assignTicket(id, admin_id);
-// // //         if (!ticket) {
-// // //             return res.status(404).json({
-// // //                 success: false,
-// // //                 message: 'Ticket not found'
-// // //             });
-// // //         }
-
-// // //         return res.status(200).json({
-// // //             success: true,
-// // //             message: 'Ticket assigned successfully',
-// // //             data: ticket
-// // //         });
-
-// // //     } catch (error) {
-// // //         logger.error('Error assigning ticket:', error);
-// // //         return res.status(500).json({
-// // //             success: false,
-// // //             message: 'Failed to assign ticket'
-// // //         });
-// // //     }
-// // // };
-
-// // // // ─── Get statistics ──────────────────────────────────────────
-// // // exports.getStats = async (req, res) => {
-// // //     try {
-// // //         const stats = await supportTicketService.getStats();
-// // //         return res.status(200).json({
-// // //             success: true,
-// // //             data: stats
-// // //         });
-// // //     } catch (error) {
-// // //         logger.error('Error getting stats:', error);
-// // //         return res.status(500).json({
-// // //             success: false,
-// // //             message: 'Failed to fetch stats'
-// // //         });
-// // //     }
-// // // };
-
-// // // // ─── Get dashboard stats ─────────────────────────────────────
-// // // exports.getDashboardStats = async (req, res) => {
-// // //     try {
-// // //         const stats = await supportTicketService.getDashboardStats();
-// // //         return res.status(200).json({
-// // //             success: true,
-// // //             data: stats
-// // //         });
-// // //     } catch (error) {
-// // //         logger.error('Error getting dashboard stats:', error);
-// // //         return res.status(500).json({
-// // //             success: false,
-// // //             message: 'Failed to fetch dashboard stats'
-// // //         });
-// // //     }
-// // // };
-
-// // // // ─── Manual sync trigger ─────────────────────────────────────
-// // // exports.manualSync = async (req, res) => {
-// // //     try {
-// // //         const emailSyncService = require('../services/emailSyncService');
-// // //         await emailSyncService.sync();
-// // //         return res.status(200).json({
-// // //             success: true,
-// // //             message: 'Manual sync completed'
-// // //         });
-// // //     } catch (error) {
-// // //         logger.error('Error during manual sync:', error);
-// // //         return res.status(500).json({
-// // //             success: false,
-// // //             message: 'Manual sync failed',
-// // //             error: error.message
-// // //         });
-// // //     }
-// // // };
-
-// // // controllers/supportTicketController.js
 // // const supportTicketService = require('../services/supportTicketService');
 // // const supportEmailService = require('../services/supportEmailService');
 // // const logger = require('../utils/logger');
+
+// // // ✅ NEW: strips any "[TICKET-XXXXXXXX-XXXX]" tag(s) that may already be
+// // // embedded in a stored subject from before the subject-consistency fix,
+// // // so replies don't keep re-stacking brackets/prefixes forever.
+// // function cleanSubject(subject) {
+// //     if (!subject) return subject;
+// //     return subject
+// //         .replace(/\s*\[TICKET-\d{8}-\d{4}\]\s*/gi, ' ')
+// //         .replace(/\s{2,}/g, ' ')
+// //         .trim();
+// // }
 
 // // // ─── List all tickets (with filters) ──────────────────────────
 // // exports.listTickets = async (req, res) => {
@@ -441,57 +78,80 @@
 // //     }
 // // };
 
-// // // ─── Reply to a ticket ────────────────────────────────────────
 // // exports.replyToTicket = async (req, res) => {
 // //     try {
 // //         const { id } = req.params;
-// //         const { message, is_internal = false } = req.body;
+// //         const { message, is_internal } = req.body;
 // //         const adminId = req.userId;
+// //         const files = req.files || [];
 
-// //         if (!message || message.trim() === '') {
+// //         // ✅ multipart fields are always strings — coerce properly
+// //         const isInternalBool = is_internal === true || is_internal === 'true';
+
+// //         // ✅ allow attachment-only replies with no text
+// //         if ((!message || message.trim() === '') && files.length === 0) {
 // //             return res.status(400).json({
 // //                 success: false,
-// //                 message: 'Reply message is required'
+// //                 message: 'Reply message or attachment is required'
 // //             });
 // //         }
 
 // //         const ticket = await supportTicketService.getTicketById(id);
 // //         if (!ticket) {
-// //             return res.status(404).json({
-// //                 success: false,
-// //                 message: 'Ticket not found'
-// //             });
+// //             return res.status(404).json({ success: false, message: 'Ticket not found' });
 // //         }
 
 // //         const adminEmail = req.user?.email || req.userEmail || process.env.SUPERADMIN_GMAIL_EMAIL || 'admin@system.com';
 // //         const adminName = req.user?.name || req.userName || 'Admin';
 
-// //         // ✅ Save admin reply (plain text, not HTML)
-// //         const cleanMessage = message.trim();
+// //         const cleanMessage = (message || '').trim();
 // //         const reply = await supportTicketService.addReply({
 // //             ticket_id: id,
 // //             reply_type: 'admin',
 // //             sender_email: adminEmail,
 // //             sender_name: adminName,
 // //             message: cleanMessage,
-// //             is_internal: is_internal
+// //             is_internal: isInternalBool
 // //         });
+
+// //         // ✅ NEW: persist each uploaded file against this reply
+// //         const savedAttachments = [];
+// //         for (const file of files) {
+// //             try {
+// //                 const saved = await supportEmailService.saveUploadedFile(file, id, reply.id, adminId);
+// //                 savedAttachments.push(saved);
+// //             } catch (attachErr) {
+// //                 logger.error(`❌ Failed to save attachment ${file.originalname} for ticket ${id}:`, attachErr.message);
+// //             }
+// //         }
+// //         reply.attachments = savedAttachments;
 
 // //         if (!['resolved', 'closed'].includes(ticket.status)) {
 // //             await supportTicketService.updateStatus(id, 'in_progress');
 // //         }
 
-// //         if (!is_internal) {
-// //             // ✅ Get clean frontend URL
+// //         if (!isInternalBool) {
 // //             const frontendUrl = process.env.FRONTEND_URL?.split(',')[0] || 'http://localhost:3000';
-            
-// //             const subject = `Re: ${ticket.subject} [${ticket.ticket_number}]`;
+// //             const baseSubject = cleanSubject(ticket.subject);
+// //             const subject = baseSubject.toLowerCase().startsWith('re:')
+// //                 ? baseSubject
+// //                 : `Re: ${baseSubject}`;
+
+// //             // ✅ include download links for any attachments in the outgoing email
+// //             const attachmentsHtml = savedAttachments.length > 0
+// //                 ? `<div style="margin-top:10px;">
+// //                      <strong>Attachments:</strong>
+// //                      <ul>${savedAttachments.map(a => `<li><a href="${a.download_url}">${a.filename}</a></li>`).join('')}</ul>
+// //                    </div>`
+// //                 : '';
+
 // //             const html = `
 // //                 <html>
 // //                 <body>
 // //                     <p>Hello ${ticket.user_name || 'User'},</p>
 // //                     <div style="background-color: #f8f9fa; padding: 15px; border-left: 4px solid #007bff; margin: 10px 0;">
 // //                         <p>${cleanMessage.replace(/\n/g, '<br>')}</p>
+// //                         ${attachmentsHtml}
 // //                     </div>
 // //                     <p>Reply to this email to continue the conversation.</p>
 // //                     <hr>
@@ -503,18 +163,19 @@
 // //                 </html>
 // //             `;
 
-// //             // ✅ Send email with proper threading
+// //             const looksLikeRealMessageId = /^<.+@.+>$/.test(ticket.email_rfc_message_id || '');
+// //             const inReplyToMessageId = looksLikeRealMessageId ? ticket.email_rfc_message_id : null;
+// //             const referencesChain = looksLikeRealMessageId ? ticket.email_references : null;
 // //             const emailResult = await supportEmailService.sendEmailReply({
 // //                 to: ticket.user_email,
 // //                 subject,
 // //                 html,
-// //                 inReplyToMessageId: ticket.email_rfc_message_id,
-// //                 referencesChain: ticket.email_references,
+// //                 inReplyToMessageId,
+// //                 referencesChain,
 // //                 threadId: ticket.gmail_thread_id,
 // //                 ticketNumber: ticket.ticket_number
 // //             });
 
-// //             // ✅ Save email info
 // //             if (emailResult) {
 // //                 await supportTicketService.updateTicketEmailInfo(ticket.id, {
 // //                     gmailApiMessageId: emailResult.gmailApiMessageId,
@@ -524,12 +185,8 @@
 // //                 });
 // //             }
 
-// //             // ✅ IMPORTANT: Mark as processed to prevent duplicate sync
 // //             if (emailResult && emailResult.gmailApiMessageId) {
-// //                 await supportTicketService.markEmailProcessed(
-// //                     emailResult.gmailApiMessageId, 
-// //                     ticket.id
-// //                 );
+// //                 await supportTicketService.markEmailProcessed(emailResult.gmailApiMessageId, ticket.id);
 // //                 logger.info(`✅ Marked sent email as processed: ${emailResult.gmailApiMessageId}`);
 // //             }
 
@@ -557,7 +214,6 @@
 // //     try {
 // //         const { id } = req.params;
 // //         const { status } = req.body;
-
 // //         const validStatuses = ['pending', 'in_progress', 'resolved', 'closed'];
 // //         if (!validStatuses.includes(status)) {
 // //             return res.status(400).json({
@@ -573,11 +229,13 @@
 // //                 message: 'Ticket not found'
 // //             });
 // //         }
-
-// //         // If resolved, send resolution email
 // //         if (status === 'resolved') {
 // //             const frontendUrl = process.env.FRONTEND_URL?.split(',')[0] || 'http://localhost:3000';
-// //             const subject = `Your ticket has been resolved [${ticket.ticket_number}]`;
+
+// //             const baseSubject = cleanSubject(ticket.subject);
+// //             const subject = baseSubject.toLowerCase().startsWith('re:')
+// //                 ? baseSubject
+// //                 : `Re: ${baseSubject}`;
 // //             const html = `
 // //                 <html>
 // //                 <body>
@@ -592,17 +250,18 @@
 // //                 </body>
 // //                 </html>
 // //             `;
-            
+// //             const looksLikeRealMessageId = /^<.+@.+>$/.test(ticket.email_rfc_message_id || '');
+// //             const inReplyToMessageId = looksLikeRealMessageId ? ticket.email_rfc_message_id : null;
+// //             const referencesChain = looksLikeRealMessageId ? ticket.email_references : null;
 // //             const emailResult = await supportEmailService.sendEmailReply({
 // //                 to: ticket.user_email,
 // //                 subject,
 // //                 html,
-// //                 inReplyToMessageId: ticket.email_rfc_message_id,
-// //                 referencesChain: ticket.email_references,
+// //                 inReplyToMessageId,
+// //                 referencesChain,
 // //                 threadId: ticket.gmail_thread_id,
 // //                 ticketNumber: ticket.ticket_number
 // //             });
-
 // //             if (emailResult && emailResult.gmailApiMessageId) {
 // //                 await supportTicketService.markEmailProcessed(emailResult.gmailApiMessageId, ticket.id);
 // //             }
@@ -769,11 +428,152 @@
 // //     }
 // // };
 
+// // // ─── Manually trigger / renew Gmail push watch ────────────────
+// // exports.startGmailWatch = async (req, res) => {
+// //     try {
+// //         const emailSyncService = require('../services/emailSyncService');
+// //         const result = await emailSyncService.startGmailWatch();
+// //         return res.status(200).json({
+// //             success: true,
+// //             message: 'Gmail watch registered',
+// //             data: result
+// //         });
+// //     } catch (error) {
+// //         logger.error('Error starting Gmail watch:', error);
+// //         return res.status(500).json({
+// //             success: false,
+// //             message: 'Failed to start Gmail watch',
+// //             error: error.message
+// //         });
+// //     }
+// // };
 
-// // controllers/supportTicketController.js
+
+// // // exports.handleGmailWebhook = async (req, res) => {
+
+
+// // //     // Ack immediately — Pub/Sub retries aggressively on slow/failed responses.
+// // //     res.status(200).send('OK');
+
+// // //     try {
+// // //         const message = req.body?.message;
+// // //         if (!message?.data) {
+// // //             logger.warn('⚠️ Gmail webhook called with no message.data');
+// // //             return;
+// // //         }
+
+// // //         const decoded = Buffer.from(message.data, 'base64').toString('utf-8');
+// // //         const { historyId, emailAddress } = JSON.parse(decoded);
+
+// // //         logger.info(`📬 Gmail push notification: historyId=${historyId} for ${emailAddress}`);
+
+// // //         const settingsService = require('../services/settingsService');
+// // //         const lastHistoryId = await settingsService.get('gmail_last_history_id');
+
+// // //         if (!lastHistoryId) {
+// // //             logger.warn('⚠️ No stored gmail_last_history_id — storing current one, skipping this diff');
+// // //             await settingsService.set('gmail_last_history_id', String(historyId));
+// // //             return;
+// // //         }
+
+// // //         const emailSyncService = require('../services/emailSyncService');
+// // //         const result = await emailSyncService.processHistorySince(lastHistoryId);
+
+// // //         // ✅ NEW: notify connected dashboards that something changed
+// // //         const io = req.app.get('io');
+// // //         if (io && result?.touchedTicketIds?.length > 0) {
+// // //             io.emit('tickets:updated', { ticketIds: result.touchedTicketIds });
+// // //             logger.info(`📡 Emitted tickets:updated for [${result.touchedTicketIds.join(', ')}]`);
+// // //         }
+
+// // //         await settingsService.set('gmail_last_history_id', String(historyId));
+
+// // //     } catch (error) {
+// // //         logger.error('❌ Error processing Gmail webhook:', error);
+// // //     }
+// // // };
+
+
+// // /**
+// //  * Handle Gmail push notification webhook
+// //  * POST /api/support/gmail-webhook
+// //  */
+// // exports.handleGmailWebhook = async (req, res) => {
+// //     try {
+// //         // Decode the base64 encoded data from Pub/Sub
+// //         let data;
+// //         if (req.body.message && req.body.message.data) {
+// //             const decoded = Buffer.from(req.body.message.data, 'base64').toString('utf-8');
+// //             data = JSON.parse(decoded);
+// //         } else {
+// //             // Direct webhook (not via Pub/Sub)
+// //             data = req.body;
+// //         }
+
+// //         const pushHistoryId = data.historyId;
+// //         const emailAddress = data.emailAddress;
+
+// //         if (!pushHistoryId) {
+// //             logger.warn('⚠️ Gmail webhook received without historyId');
+// //             return res.status(200).send('OK');
+// //         }
+
+// //         logger.info(`📬 Gmail push notification: historyId=${pushHistoryId} for ${emailAddress}`);
+
+// //         // ✅ IMPORTANT: Use the STORED historyId, not the one from the push
+// //         const settingsService = require('../services/settingsService');
+// //         const storedHistoryId = await settingsService.get('gmail_last_history_id');
+
+// //         if (!storedHistoryId) {
+// //             // No stored cursor - do a full sync
+// //             logger.info('📭 No stored history cursor, running full sync...');
+// //             await emailSyncService.sync();
+// //             // Store the push historyId as the new cursor
+// //             await settingsService.set('gmail_last_history_id', String(pushHistoryId));
+// //             return res.status(200).send('OK');
+// //         }
+
+// //         const startId = parseInt(storedHistoryId);
+        
+// //         // Only log if there's a meaningful difference
+// //         if (startId !== pushHistoryId) {
+// //             logger.info(`📌 Diffing from stored historyId=${startId} (push said ${pushHistoryId})`);
+// //         } else {
+// //             logger.info(`📌 Stored historyId matches push: ${startId}`);
+// //         }
+
+// //         // Process history from the stored cursor, NOT from the push historyId
+// //         const result = await emailSyncService.processHistorySince(startId);
+
+// //         // If we processed messages, they were already updated inside processHistorySince
+// //         // If no messages were processed, the cursor stays where it was
+
+// //         res.status(200).send('OK');
+
+// //     } catch (error) {
+// //         logger.error('Error processing Gmail webhook:', error);
+// //         // Always return 200 to acknowledge receipt
+// //         res.status(200).send('OK');
+// //     }
+// // };
+
+
 // const supportTicketService = require('../services/supportTicketService');
 // const supportEmailService = require('../services/supportEmailService');
+// const emailSyncService = require('../services/emailSyncService');  // ✅ ADD THIS
+// const settingsService = require('../services/settingsService');    // ✅ ADD THIS
 // const logger = require('../utils/logger');
+
+// // ✅ NEW: strips any "[TICKET-XXXXXXXX-XXXX]" tag(s) that may already be
+// // embedded in a stored subject from before the subject-consistency fix,
+// // so replies don't keep re-stacking brackets/prefixes forever.
+// function cleanSubject(subject) {
+//     if (!subject) return subject;
+//     return subject
+//         .replace(/\s*\[TICKET-\d{8}-\d{4}\]\s*/gi, ' ')
+//         .replace(/\s{2,}/g, ' ')
+//         .trim();
+// }
 
 // // ─── List all tickets (with filters) ──────────────────────────
 // exports.listTickets = async (req, res) => {
@@ -840,54 +640,72 @@
 //     }
 // };
 
-// // ─── Reply to a ticket ────────────────────────────────────────
 // exports.replyToTicket = async (req, res) => {
 //     try {
 //         const { id } = req.params;
-//         const { message, is_internal = false } = req.body;
+//         const { message, is_internal } = req.body;
 //         const adminId = req.userId;
+//         const files = req.files || [];
 
-//         if (!message || message.trim() === '') {
+//         // ✅ multipart fields are always strings — coerce properly
+//         const isInternalBool = is_internal === true || is_internal === 'true';
+
+//         // ✅ allow attachment-only replies with no text
+//         if ((!message || message.trim() === '') && files.length === 0) {
 //             return res.status(400).json({
 //                 success: false,
-//                 message: 'Reply message is required'
+//                 message: 'Reply message or attachment is required'
 //             });
 //         }
 
 //         const ticket = await supportTicketService.getTicketById(id);
 //         if (!ticket) {
-//             return res.status(404).json({
-//                 success: false,
-//                 message: 'Ticket not found'
-//             });
+//             return res.status(404).json({ success: false, message: 'Ticket not found' });
 //         }
 
 //         const adminEmail = req.user?.email || req.userEmail || process.env.SUPERADMIN_GMAIL_EMAIL || 'admin@system.com';
 //         const adminName = req.user?.name || req.userName || 'Admin';
 
-//         // ✅ Save admin reply (plain text, not HTML)
-//         const cleanMessage = message.trim();
+//         const cleanMessage = (message || '').trim();
 //         const reply = await supportTicketService.addReply({
 //             ticket_id: id,
 //             reply_type: 'admin',
 //             sender_email: adminEmail,
 //             sender_name: adminName,
 //             message: cleanMessage,
-//             is_internal: is_internal
+//             is_internal: isInternalBool
 //         });
+
+//         // ✅ NEW: persist each uploaded file against this reply
+//         const savedAttachments = [];
+//         for (const file of files) {
+//             try {
+//                 const saved = await supportEmailService.saveUploadedFile(file, id, reply.id, adminId);
+//                 savedAttachments.push(saved);
+//             } catch (attachErr) {
+//                 logger.error(`❌ Failed to save attachment ${file.originalname} for ticket ${id}:`, attachErr.message);
+//             }
+//         }
+//         reply.attachments = savedAttachments;
 
 //         if (!['resolved', 'closed'].includes(ticket.status)) {
 //             await supportTicketService.updateStatus(id, 'in_progress');
 //         }
 
-//         if (!is_internal) {
-//             // ✅ Get clean frontend URL
+//         if (!isInternalBool) {
 //             const frontendUrl = process.env.FRONTEND_URL?.split(',')[0] || 'http://localhost:3000';
+//             const baseSubject = cleanSubject(ticket.subject);
+//             const subject = baseSubject.toLowerCase().startsWith('re:')
+//                 ? baseSubject
+//                 : `Re: ${baseSubject}`;
 
-//             // ✅ FIX: subject must normalize (after stripping "Re: ") to the
-//             // exact same subject as the ticket's root email. No "[TICKET-XXX]"
-//             // bracket — Gmail requires matching subjects to group into one thread.
-//             const subject = `Re: ${ticket.subject}`;
+//             // ✅ include download links for any attachments in the outgoing email
+//             const attachmentsHtml = savedAttachments.length > 0
+//                 ? `<div style="margin-top:10px;">
+//                      <strong>Attachments:</strong>
+//                      <ul>${savedAttachments.map(a => `<li><a href="${a.download_url}">${a.filename}</a></li>`).join('')}</ul>
+//                    </div>`
+//                 : '';
 
 //             const html = `
 //                 <html>
@@ -895,6 +713,7 @@
 //                     <p>Hello ${ticket.user_name || 'User'},</p>
 //                     <div style="background-color: #f8f9fa; padding: 15px; border-left: 4px solid #007bff; margin: 10px 0;">
 //                         <p>${cleanMessage.replace(/\n/g, '<br>')}</p>
+//                         ${attachmentsHtml}
 //                     </div>
 //                     <p>Reply to this email to continue the conversation.</p>
 //                     <hr>
@@ -906,18 +725,19 @@
 //                 </html>
 //             `;
 
-//             // ✅ Send email with proper threading
+//             const looksLikeRealMessageId = /^<.+@.+>$/.test(ticket.email_rfc_message_id || '');
+//             const inReplyToMessageId = looksLikeRealMessageId ? ticket.email_rfc_message_id : null;
+//             const referencesChain = looksLikeRealMessageId ? ticket.email_references : null;
 //             const emailResult = await supportEmailService.sendEmailReply({
 //                 to: ticket.user_email,
 //                 subject,
 //                 html,
-//                 inReplyToMessageId: ticket.email_rfc_message_id,
-//                 referencesChain: ticket.email_references,
+//                 inReplyToMessageId,
+//                 referencesChain,
 //                 threadId: ticket.gmail_thread_id,
 //                 ticketNumber: ticket.ticket_number
 //             });
 
-//             // ✅ Save email info
 //             if (emailResult) {
 //                 await supportTicketService.updateTicketEmailInfo(ticket.id, {
 //                     gmailApiMessageId: emailResult.gmailApiMessageId,
@@ -927,12 +747,8 @@
 //                 });
 //             }
 
-//             // ✅ IMPORTANT: Mark as processed to prevent duplicate sync
 //             if (emailResult && emailResult.gmailApiMessageId) {
-//                 await supportTicketService.markEmailProcessed(
-//                     emailResult.gmailApiMessageId, 
-//                     ticket.id
-//                 );
+//                 await supportTicketService.markEmailProcessed(emailResult.gmailApiMessageId, ticket.id);
 //                 logger.info(`✅ Marked sent email as processed: ${emailResult.gmailApiMessageId}`);
 //             }
 
@@ -960,7 +776,6 @@
 //     try {
 //         const { id } = req.params;
 //         const { status } = req.body;
-
 //         const validStatuses = ['pending', 'in_progress', 'resolved', 'closed'];
 //         if (!validStatuses.includes(status)) {
 //             return res.status(400).json({
@@ -976,14 +791,13 @@
 //                 message: 'Ticket not found'
 //             });
 //         }
-
-//         // If resolved, send resolution email
 //         if (status === 'resolved') {
 //             const frontendUrl = process.env.FRONTEND_URL?.split(',')[0] || 'http://localhost:3000';
 
-//             // ✅ FIX: same normalized subject as every other email on this ticket
-//             const subject = `Re: ${ticket.subject}`;
-
+//             const baseSubject = cleanSubject(ticket.subject);
+//             const subject = baseSubject.toLowerCase().startsWith('re:')
+//                 ? baseSubject
+//                 : `Re: ${baseSubject}`;
 //             const html = `
 //                 <html>
 //                 <body>
@@ -998,17 +812,18 @@
 //                 </body>
 //                 </html>
 //             `;
-            
+//             const looksLikeRealMessageId = /^<.+@.+>$/.test(ticket.email_rfc_message_id || '');
+//             const inReplyToMessageId = looksLikeRealMessageId ? ticket.email_rfc_message_id : null;
+//             const referencesChain = looksLikeRealMessageId ? ticket.email_references : null;
 //             const emailResult = await supportEmailService.sendEmailReply({
 //                 to: ticket.user_email,
 //                 subject,
 //                 html,
-//                 inReplyToMessageId: ticket.email_rfc_message_id,
-//                 referencesChain: ticket.email_references,
+//                 inReplyToMessageId,
+//                 referencesChain,
 //                 threadId: ticket.gmail_thread_id,
 //                 ticketNumber: ticket.ticket_number
 //             });
-
 //             if (emailResult && emailResult.gmailApiMessageId) {
 //                 await supportTicketService.markEmailProcessed(emailResult.gmailApiMessageId, ticket.id);
 //             }
@@ -1141,7 +956,6 @@
 // // ─── Manual sync trigger ─────────────────────────────────────
 // exports.manualSync = async (req, res) => {
 //     try {
-//         const emailSyncService = require('../services/emailSyncService');
 //         await emailSyncService.sync();
 //         return res.status(200).json({
 //             success: true,
@@ -1160,7 +974,6 @@
 // // ─── Manual sync sent emails ─────────────────────────────────
 // exports.manualSyncSent = async (req, res) => {
 //     try {
-//         const emailSyncService = require('../services/emailSyncService');
 //         await emailSyncService.syncSentEmails();
 //         return res.status(200).json({
 //             success: true,
@@ -1175,14 +988,130 @@
 //     }
 // };
 
-// controllers/supportTicketController.js
+// // ─── Manually trigger / renew Gmail push watch ────────────────
+// exports.startGmailWatch = async (req, res) => {
+//     try {
+//         const result = await emailSyncService.startGmailWatch();
+//         return res.status(200).json({
+//             success: true,
+//             message: 'Gmail watch registered',
+//             data: result
+//         });
+//     } catch (error) {
+//         logger.error('Error starting Gmail watch:', error);
+//         return res.status(500).json({
+//             success: false,
+//             message: 'Failed to start Gmail watch',
+//             error: error.message
+//         });
+//     }
+// };
+
+// /**
+//  * Handle Gmail push notification webhook
+//  * POST /api/support/gmail-webhook
+//  */
+// /**
+//  * Handle Gmail push notification webhook
+//  * POST /api/support/gmail-webhook
+//  */
+// exports.handleGmailWebhook = async (req, res) => {
+//     try {
+//         // Decode the base64 encoded data from Pub/Sub
+//         let data;
+//         if (req.body.message && req.body.message.data) {
+//             const decoded = Buffer.from(req.body.message.data, 'base64').toString('utf-8');
+//             data = JSON.parse(decoded);
+//         } else {
+//             data = req.body;
+//         }
+
+//         const pushHistoryId = data.historyId;
+//         const emailAddress = data.emailAddress;
+
+//         if (!pushHistoryId) {
+//             logger.warn('⚠️ Gmail webhook received without historyId');
+//             return res.status(200).send('OK');
+//         }
+
+//         logger.info(`📬 Gmail push notification: historyId=${pushHistoryId} for ${emailAddress}`);
+
+//         // ✅ Use the STORED historyId from the database
+//         const storedHistoryId = await settingsService.get('gmail_last_history_id');
+
+//         if (!storedHistoryId) {
+//             logger.info('📭 No stored history cursor, running full sync...');
+//             await emailSyncService.sync();
+//             await settingsService.set('gmail_last_history_id', String(pushHistoryId));
+//             return res.status(200).send('OK');
+//         }
+
+//         const startId = parseInt(storedHistoryId);
+        
+//         // ✅ If stored cursor is already >= push, we need to process the gap
+//         // Because the cursor jumped ahead without processing messages
+//         if (startId >= pushHistoryId) {
+//             logger.info(`📌 Cursor ${startId} is >= push ${pushHistoryId}`);
+            
+//             // Try to process from the stored cursor - 1 to catch anything missed
+//             const processFrom = Math.max(34600, startId - 100);
+//             logger.info(`📌 Attempting to process from ${processFrom} to ${pushHistoryId}`);
+            
+//             const result = await emailSyncService.processHistorySince(processFrom);
+            
+//             // Only update cursor if we actually processed messages
+//             if (result?.touchedTicketIds?.length > 0) {
+//                 await settingsService.set('gmail_last_history_id', String(pushHistoryId));
+//                 logger.info(`📌 Updated history cursor to ${pushHistoryId} after processing ${result.touchedTicketIds.length} tickets`);
+                
+//                 // Emit socket events
+//                 const io = req.app.get('io');
+//                 if (io) {
+//                     io.emit('tickets:updated', { ticketIds: result.touchedTicketIds });
+//                     logger.info(`📡 Emitted tickets:updated for [${result.touchedTicketIds.join(', ')}]`);
+//                 }
+//             } else {
+//                 logger.info(`📌 No messages processed, cursor stays at ${storedHistoryId}`);
+//             }
+            
+//             return res.status(200).send('OK');
+//         }
+
+//         logger.info(`📌 Diffing from stored historyId=${startId} to ${pushHistoryId}`);
+
+//         // Process history from the stored cursor
+//         const result = await emailSyncService.processHistorySince(startId);
+
+//         // ✅ Only update the cursor if we actually processed messages
+//         if (result?.touchedTicketIds?.length > 0) {
+//             await settingsService.set('gmail_last_history_id', String(pushHistoryId));
+//             logger.info(`📌 Updated history cursor from ${startId} to ${pushHistoryId} (${result.touchedTicketIds.length} tickets processed)`);
+            
+//             // Emit socket events
+//             const io = req.app.get('io');
+//             if (io) {
+//                 io.emit('tickets:updated', { ticketIds: result.touchedTicketIds });
+//                 logger.info(`📡 Emitted tickets:updated for [${result.touchedTicketIds.join(', ')}]`);
+//             }
+//         } else {
+//             // No messages processed - don't advance the cursor
+//             logger.info(`📌 No messages processed in this diff, cursor stays at ${startId}`);
+//         }
+
+//         res.status(200).send('OK');
+
+//     } catch (error) {
+//         logger.error('Error processing Gmail webhook:', error);
+//         res.status(200).send('OK');
+//     }
+// };
+
 const supportTicketService = require('../services/supportTicketService');
 const supportEmailService = require('../services/supportEmailService');
+const emailSyncService = require('../services/emailSyncService');
+const settingsService = require('../services/settingsService');
 const logger = require('../utils/logger');
 
-// ✅ NEW: strips any "[TICKET-XXXXXXXX-XXXX]" tag(s) that may already be
-// embedded in a stored subject from before the subject-consistency fix,
-// so replies don't keep re-stacking brackets/prefixes forever.
 function cleanSubject(subject) {
     if (!subject) return subject;
     return subject
@@ -1191,7 +1120,6 @@ function cleanSubject(subject) {
         .trim();
 }
 
-// ─── List all tickets (with filters) ──────────────────────────
 exports.listTickets = async (req, res) => {
     try {
         const { 
@@ -1230,7 +1158,6 @@ exports.listTickets = async (req, res) => {
     }
 };
 
-// ─── Get a single ticket with replies ────────────────────────
 exports.getTicket = async (req, res) => {
     try {
         const { id } = req.params;
@@ -1263,10 +1190,8 @@ exports.replyToTicket = async (req, res) => {
         const adminId = req.userId;
         const files = req.files || [];
 
-        // ✅ multipart fields are always strings — coerce properly
         const isInternalBool = is_internal === true || is_internal === 'true';
 
-        // ✅ allow attachment-only replies with no text
         if ((!message || message.trim() === '') && files.length === 0) {
             return res.status(400).json({
                 success: false,
@@ -1281,47 +1206,31 @@ exports.replyToTicket = async (req, res) => {
 
         const adminEmail = req.user?.email || req.userEmail || process.env.SUPERADMIN_GMAIL_EMAIL || 'admin@system.com';
         const adminName = req.user?.name || req.userName || 'Admin';
-
         const cleanMessage = (message || '').trim();
-        const reply = await supportTicketService.addReply({
-            ticket_id: id,
-            reply_type: 'admin',
-            sender_email: adminEmail,
-            sender_name: adminName,
-            message: cleanMessage,
-            is_internal: isInternalBool
-        });
 
-        // ✅ NEW: persist each uploaded file against this reply
-        const savedAttachments = [];
-        for (const file of files) {
-            try {
-                const saved = await supportEmailService.saveUploadedFile(file, id, reply.id, adminId);
-                savedAttachments.push(saved);
-            } catch (attachErr) {
-                logger.error(`❌ Failed to save attachment ${file.originalname} for ticket ${id}:`, attachErr.message);
-            }
-        }
-        reply.attachments = savedAttachments;
+        let reply;
+        let wonRace = true; // internal notes never race, so default true
 
-        if (!['resolved', 'closed'].includes(ticket.status)) {
-            await supportTicketService.updateStatus(id, 'in_progress');
-        }
-
-        if (!isInternalBool) {
+        if (isInternalBool) {
+            // Internal notes never touch Gmail — create immediately, no race possible.
+            reply = await supportTicketService.addReply({
+                ticket_id: id,
+                reply_type: 'admin',
+                sender_email: adminEmail,
+                sender_name: adminName,
+                message: cleanMessage,
+                is_internal: true
+            });
+        } else {
+            // ✅ For customer-facing replies: send FIRST, then atomically claim the
+            // Gmail message ID BEFORE creating any row. This is the same gate the
+            // webhook/sync paths use (claimEmailProcessing), so whichever side gets
+            // there first is the only side that ever inserts into support_replies.
             const frontendUrl = process.env.FRONTEND_URL?.split(',')[0] || 'http://localhost:3000';
             const baseSubject = cleanSubject(ticket.subject);
             const subject = baseSubject.toLowerCase().startsWith('re:')
                 ? baseSubject
                 : `Re: ${baseSubject}`;
-
-            // ✅ include download links for any attachments in the outgoing email
-            const attachmentsHtml = savedAttachments.length > 0
-                ? `<div style="margin-top:10px;">
-                     <strong>Attachments:</strong>
-                     <ul>${savedAttachments.map(a => `<li><a href="${a.download_url}">${a.filename}</a></li>`).join('')}</ul>
-                   </div>`
-                : '';
 
             const html = `
                 <html>
@@ -1329,7 +1238,6 @@ exports.replyToTicket = async (req, res) => {
                     <p>Hello ${ticket.user_name || 'User'},</p>
                     <div style="background-color: #f8f9fa; padding: 15px; border-left: 4px solid #007bff; margin: 10px 0;">
                         <p>${cleanMessage.replace(/\n/g, '<br>')}</p>
-                        ${attachmentsHtml}
                     </div>
                     <p>Reply to this email to continue the conversation.</p>
                     <hr>
@@ -1355,21 +1263,90 @@ exports.replyToTicket = async (req, res) => {
                 ticketNumber: ticket.ticket_number
             });
 
-            if (emailResult) {
-                await supportTicketService.updateTicketEmailInfo(ticket.id, {
-                    gmailApiMessageId: emailResult.gmailApiMessageId,
-                    rfcMessageId: emailResult.rfcMessageId,
-                    references: emailResult.references,
-                    gmailThreadId: emailResult.threadId
-                });
+            if (emailResult && emailResult.gmailApiMessageId) {
+                wonRace = await supportTicketService.claimEmailProcessing(emailResult.gmailApiMessageId, ticket.id);
             }
 
-            if (emailResult && emailResult.gmailApiMessageId) {
-                await supportTicketService.markEmailProcessed(emailResult.gmailApiMessageId, ticket.id);
-                logger.info(`✅ Marked sent email as processed: ${emailResult.gmailApiMessageId}`);
+            if (wonRace) {
+                // We got here first — safe to create the reply row, with the
+                // Gmail ID already attached (no separate update needed, so no
+                // UNIQUE-collision window at all).
+                reply = await supportTicketService.addReply({
+                    ticket_id: id,
+                    reply_type: 'admin',
+                    sender_email: adminEmail,
+                    sender_name: adminName,
+                    message: cleanMessage,
+                    is_internal: false,
+                    gmail_message_id: emailResult?.gmailApiMessageId || null,
+                    email_rfc_message_id: emailResult?.rfcMessageId || null
+                });
+
+                if (emailResult) {
+                    try {
+                        await supportTicketService.updateTicketEmailInfo(ticket.id, {
+                            gmailApiMessageId: emailResult.gmailApiMessageId,
+                            rfcMessageId: emailResult.rfcMessageId,
+                            references: emailResult.references,
+                            gmailThreadId: emailResult.threadId
+                        });
+                    } catch (metaErr) {
+                        logger.error(`⚠️ Reply sent OK but failed to save ticket email info:`, metaErr.message);
+                    }
+                }
+            } else {
+                // A webhook/sync run claimed this exact Gmail message first and
+                // already inserted its own reply row for it — reuse that row
+                // instead of creating a duplicate.
+                logger.warn(`⚠️ Lost claim race for ${emailResult?.gmailApiMessageId} — reusing existing reply row`);
+                reply = await supportTicketService.getReplyByGmailMessageId(emailResult?.gmailApiMessageId);
+
+                if (reply && reply.message !== cleanMessage) {
+                    // The sync path stores the raw sent-email HTML as the message
+                    // (no plain-text part exists for our own outgoing emails).
+                    // We know the real text the admin typed — fix the row.
+                    reply = await supportTicketService.updateReplyMessage(reply.id, cleanMessage) || reply;
+                }
+
+                if (!reply) {
+                    // Extremely unlikely (claim lost but no row yet — the other
+                    // side is mid-insert). Fall back to creating our own row
+                    // rather than losing the message entirely.
+                    reply = await supportTicketService.addReply({
+                        ticket_id: id,
+                        reply_type: 'admin',
+                        sender_email: adminEmail,
+                        sender_name: adminName,
+                        message: cleanMessage,
+                        is_internal: false,
+                        gmail_message_id: emailResult?.gmailApiMessageId || null,
+                        email_rfc_message_id: emailResult?.rfcMessageId || null
+                    });
+                }
             }
 
             logger.info(`✅ Admin reply sent to ${ticket.user_email} for ticket ${ticket.ticket_number}`);
+        }
+
+        const savedAttachments = [];
+        for (const file of files) {
+            try {
+                const saved = await supportEmailService.saveUploadedFile(file, id, reply.id, adminId);
+                savedAttachments.push(saved);
+            } catch (attachErr) {
+                logger.error(`❌ Failed to save attachment ${file.originalname} for ticket ${id}:`, attachErr.message);
+            }
+        }
+        reply.attachments = savedAttachments;
+
+        if (!['resolved', 'closed'].includes(ticket.status)) {
+            await supportTicketService.updateStatus(id, 'in_progress');
+        }
+
+
+         const io = req.app.get('io');
+        if (io) {
+            io.emit('tickets:updated', { ticketIds: [ticket.id] });
         }
 
         return res.status(200).json({
@@ -1388,12 +1365,10 @@ exports.replyToTicket = async (req, res) => {
     }
 };
 
-// ─── Update ticket status ─────────────────────────────────────
 exports.updateTicketStatus = async (req, res) => {
     try {
         const { id } = req.params;
         const { status } = req.body;
-
         const validStatuses = ['pending', 'in_progress', 'resolved', 'closed'];
         if (!validStatuses.includes(status)) {
             return res.status(400).json({
@@ -1409,7 +1384,6 @@ exports.updateTicketStatus = async (req, res) => {
                 message: 'Ticket not found'
             });
         }
-
         if (status === 'resolved') {
             const frontendUrl = process.env.FRONTEND_URL?.split(',')[0] || 'http://localhost:3000';
 
@@ -1417,7 +1391,6 @@ exports.updateTicketStatus = async (req, res) => {
             const subject = baseSubject.toLowerCase().startsWith('re:')
                 ? baseSubject
                 : `Re: ${baseSubject}`;
-
             const html = `
                 <html>
                 <body>
@@ -1432,11 +1405,9 @@ exports.updateTicketStatus = async (req, res) => {
                 </body>
                 </html>
             `;
-
             const looksLikeRealMessageId = /^<.+@.+>$/.test(ticket.email_rfc_message_id || '');
             const inReplyToMessageId = looksLikeRealMessageId ? ticket.email_rfc_message_id : null;
             const referencesChain = looksLikeRealMessageId ? ticket.email_references : null;
-
             const emailResult = await supportEmailService.sendEmailReply({
                 to: ticket.user_email,
                 subject,
@@ -1446,13 +1417,25 @@ exports.updateTicketStatus = async (req, res) => {
                 threadId: ticket.gmail_thread_id,
                 ticketNumber: ticket.ticket_number
             });
-
-            if (emailResult && emailResult.gmailApiMessageId) {
-                await supportTicketService.markEmailProcessed(emailResult.gmailApiMessageId, ticket.id);
+     if (emailResult && emailResult.gmailApiMessageId) {
+                try {
+                    const claimed = await supportTicketService.claimEmailProcessing(emailResult.gmailApiMessageId, ticket.id);
+                    if (!claimed) {
+                        logger.warn(`⚠️ Resolution email ${emailResult.gmailApiMessageId} already claimed elsewhere (webhook likely got there first)`);
+                    }
+                } catch (markErr) {
+                    logger.error(`⚠️ Failed to claim resolution email as processed:`, markErr.message);
+                }
             }
-            
+
             logger.info(`✅ Resolution email sent for ticket ${ticket.ticket_number}`);
         }
+
+ const io = req.app.get('io');
+        if (io) {
+            io.emit('tickets:updated', { ticketIds: [ticket.id] });
+        }
+
 
         return res.status(200).json({
             success: true,
@@ -1469,7 +1452,6 @@ exports.updateTicketStatus = async (req, res) => {
     }
 };
 
-// ─── Update ticket priority ──────────────────────────────────
 exports.updateTicketPriority = async (req, res) => {
     try {
         const { id } = req.params;
@@ -1491,6 +1473,12 @@ exports.updateTicketPriority = async (req, res) => {
             });
         }
 
+   const io = req.app.get('io');
+        if (io) {
+            io.emit('tickets:updated', { ticketIds: [ticket.id] });
+        }
+
+
         return res.status(200).json({
             success: true,
             message: `Ticket priority updated to ${priority}`,
@@ -1506,7 +1494,6 @@ exports.updateTicketPriority = async (req, res) => {
     }
 };
 
-// ─── Assign ticket to admin ──────────────────────────────────
 exports.assignTicket = async (req, res) => {
     try {
         const { id } = req.params;
@@ -1526,6 +1513,12 @@ exports.assignTicket = async (req, res) => {
                 message: 'Ticket not found'
             });
         }
+const io = req.app.get('io');
+        if (io) {
+            io.emit('tickets:updated', { ticketIds: [ticket.id] });
+        }
+
+
 
         return res.status(200).json({
             success: true,
@@ -1542,7 +1535,6 @@ exports.assignTicket = async (req, res) => {
     }
 };
 
-// ─── Get statistics ──────────────────────────────────────────
 exports.getStats = async (req, res) => {
     try {
         const stats = await supportTicketService.getStats();
@@ -1559,7 +1551,6 @@ exports.getStats = async (req, res) => {
     }
 };
 
-// ─── Get dashboard stats ─────────────────────────────────────
 exports.getDashboardStats = async (req, res) => {
     try {
         const stats = await supportTicketService.getDashboardStats();
@@ -1576,10 +1567,8 @@ exports.getDashboardStats = async (req, res) => {
     }
 };
 
-// ─── Manual sync trigger ─────────────────────────────────────
 exports.manualSync = async (req, res) => {
     try {
-        const emailSyncService = require('../services/emailSyncService');
         await emailSyncService.sync();
         return res.status(200).json({
             success: true,
@@ -1595,10 +1584,8 @@ exports.manualSync = async (req, res) => {
     }
 };
 
-// ─── Manual sync sent emails ─────────────────────────────────
 exports.manualSyncSent = async (req, res) => {
     try {
-        const emailSyncService = require('../services/emailSyncService');
         await emailSyncService.syncSentEmails();
         return res.status(200).json({
             success: true,
@@ -1613,10 +1600,8 @@ exports.manualSyncSent = async (req, res) => {
     }
 };
 
-// ─── Manually trigger / renew Gmail push watch ────────────────
 exports.startGmailWatch = async (req, res) => {
     try {
-        const emailSyncService = require('../services/emailSyncService');
         const result = await emailSyncService.startGmailWatch();
         return res.status(200).json({
             success: true,
@@ -1633,45 +1618,75 @@ exports.startGmailWatch = async (req, res) => {
     }
 };
 
-
 exports.handleGmailWebhook = async (req, res) => {
-    // Ack immediately — Pub/Sub retries aggressively on slow/failed responses.
-    res.status(200).send('OK');
-
     try {
-        const message = req.body?.message;
-        if (!message?.data) {
-            logger.warn('⚠️ Gmail webhook called with no message.data');
-            return;
+        let data;
+        if (req.body.message && req.body.message.data) {
+            const decoded = Buffer.from(req.body.message.data, 'base64').toString('utf-8');
+            data = JSON.parse(decoded);
+        } else {
+            data = req.body;
         }
 
-        const decoded = Buffer.from(message.data, 'base64').toString('utf-8');
-        const { historyId, emailAddress } = JSON.parse(decoded);
+        const pushHistoryId = data.historyId;
+        const emailAddress = data.emailAddress;
 
-        logger.info(`📬 Gmail push notification: historyId=${historyId} for ${emailAddress}`);
-
-        const settingsService = require('../services/settingsService');
-        const lastHistoryId = await settingsService.get('gmail_last_history_id');
-
-        if (!lastHistoryId) {
-            logger.warn('⚠️ No stored gmail_last_history_id — storing current one, skipping this diff');
-            await settingsService.set('gmail_last_history_id', String(historyId));
-            return;
+        if (!pushHistoryId) {
+            logger.warn('⚠️ Gmail webhook received without historyId');
+            return res.status(200).send('OK');
         }
 
-        const emailSyncService = require('../services/emailSyncService');
-        const result = await emailSyncService.processHistorySince(lastHistoryId);
+        logger.info(`📬 Gmail push notification: historyId=${pushHistoryId} for ${emailAddress}`);
 
-        // ✅ NEW: notify connected dashboards that something changed
+        const storedHistoryId = await settingsService.get('gmail_last_history_id');
+
+        if (!storedHistoryId) {
+            logger.info('📭 No stored history cursor, running full sync...');
+            await emailSyncService.sync();
+            await settingsService.set('gmail_last_history_id', String(pushHistoryId));
+            return res.status(200).send('OK');
+        }
+
+        const startId = parseInt(storedHistoryId);
+        
+        const processFrom = Math.min(startId, pushHistoryId) - 100;
+        
+        if (startId >= pushHistoryId) {
+            logger.info(`📌 Cursor ${startId} is >= push ${pushHistoryId}, processing from ${processFrom}`);
+        } else {
+            logger.info(`📌 Diffing from ${processFrom} to ${pushHistoryId}`);
+        }
+        
+        const result = await emailSyncService.processHistorySince(processFrom);
+        
+        // ✅ ALWAYS update cursor to push history ID
+        await settingsService.set('gmail_last_history_id', String(pushHistoryId));
+        logger.info(`📌 Updated history cursor to ${pushHistoryId}`);
+
+        // ✅ ALWAYS emit socket events to refresh the dashboard
         const io = req.app.get('io');
-        if (io && result?.touchedTicketIds?.length > 0) {
-            io.emit('tickets:updated', { ticketIds: result.touchedTicketIds });
-            logger.info(`📡 Emitted tickets:updated for [${result.touchedTicketIds.join(', ')}]`);
+        if (io) {
+            // Always emit a refresh event so frontend fetches latest data
+            io.emit('tickets:refresh');
+            logger.info(`📡 Emitted tickets:refresh to refresh dashboard`);
+            
+            // Also emit specific ticket updates if any
+            if (result?.touchedTicketIds?.length > 0) {
+                io.emit('tickets:updated', { ticketIds: result.touchedTicketIds });
+                logger.info(`📡 Emitted tickets:updated for [${result.touchedTicketIds.join(', ')}]`);
+            } else {
+                // Even if no new tickets were created, the cursor advanced
+                // The frontend should refresh to show any updates
+                logger.info(`📡 No new tickets created, but dashboard refresh sent`);
+            }
+        } else {
+            logger.warn('⚠️ Socket.io not available, frontend will not update in real-time');
         }
 
-        await settingsService.set('gmail_last_history_id', String(historyId));
+        res.status(200).send('OK');
 
     } catch (error) {
-        logger.error('❌ Error processing Gmail webhook:', error);
+        logger.error('Error processing Gmail webhook:', error);
+        res.status(200).send('OK');
     }
 };

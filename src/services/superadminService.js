@@ -54,6 +54,8 @@ exports.getAllHospitals = async function() {
                 hospital_address,
                 created_at,
                 is_active,
+                agent_calling_phone_number,  
+                call_transfer_phone_number ,  
                 updated_at
             FROM hospitals
             ORDER BY created_at DESC
@@ -523,8 +525,10 @@ exports.createHospital = async function(data) {
     }
 };
 
+
+
 /**
- * Get pending registrations
+ * Get pending registrations with demo booking data
  */
 exports.getPendingRegistrations = async function() {
     try {
@@ -542,10 +546,24 @@ exports.getPendingRegistrations = async function() {
                 u.is_active,
                 u.created_at,
                 u.hospital_id,
-                h.hospital_name AS hospital_name
+                h.hospital_name AS hospital_name,
+                -- ─── DEMO BOOKING DATA ───
+                bd.id AS demo_request_id,
+                bd.full_name AS demo_full_name,
+                bd.email AS demo_email,
+                bd.hospital_name AS demo_hospital_name,
+                bd.hospital_address AS demo_hospital_address,
+                bd.hospital_email AS demo_hospital_email,
+                bd.hospital_phone AS demo_hospital_phone,
+                bd.status AS demo_status,
+                bd.scheduled_at AS demo_scheduled_at,
+                bd.meeting_url AS demo_meeting_url,
+                bd.feedback_received AS demo_feedback_received
             FROM users u
             LEFT JOIN hospitals h
                 ON u.hospital_id = h.id
+            LEFT JOIN book_demo bd
+                ON u.demo_request_id = bd.id
             WHERE u.registration_status = 'pending'
             ORDER BY u.created_at DESC
         `);
@@ -557,6 +575,7 @@ exports.getPendingRegistrations = async function() {
         throw error;
     }
 };
+
 
 // /**
 //  * Approve user (superadmin)

@@ -10,6 +10,8 @@ const authRoutes = require('./routes/auth');
 const errorHandler = require('./middleware/errorHandler');
 const logger = require('./utils/logger');
 const { getAllTables, createAllTables } = require('./config/database');
+const http = require('http');
+const { Server } = require('socket.io');
 
 const adminRoutes = require('./routes/admin');
 const vapiRoutes = require('./routes/vapi');
@@ -70,7 +72,34 @@ const userSupportRoutes = require('./routes/userSupportRoutes');
 
 
 const app = express();
-
+// ============================================
+// 🔌 SOCKET.IO SETUP
+// ============================================
+const server = http.createServer(app);
+ 
+const io = new Server(server, {
+    cors: {
+        origin: function (origin, callback) {
+            const allowedOrigins = env.FRONTEND_URL.split(',');
+            if (!origin) return callback(null, true);
+            if (allowedOrigins.indexOf(origin) !== -1) {
+                callback(null, true);
+            } else {
+                callback(new Error('Not allowed by CORS'));
+            }
+        },
+        credentials: true
+    }
+});
+ 
+io.on('connection', (socket) => {
+    logger.info(`🔌 Socket connected: ${socket.id}`);
+    socket.on('disconnect', () => {
+        logger.info(`🔌 Socket disconnected: ${socket.id}`);
+    });
+});
+ 
+app.set('io', io); // ✅ makes io reachable in controllers via req.app.get('io')
 // ============================================
 // 🎯 STRUCTURED REQUEST/RESPONSE LOGGER
 // ============================================
@@ -179,9 +208,23 @@ app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 // ============================================
 // RATE LIMITER - Exempt Vapi webhook from rate limiting
 // ============================================
+// const limiter = rateLimit({
+//   windowMs: 15 * 60 * 1000,
+//   max: 100
+// });
+
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100
+  max: 500, // temporarily raised
+  skip: (req) => req.method === 'OPTIONS', // skip preflight
+  handler: (req, res) => {
+    console.log(`⛔ Rate limit exceeded for IP: ${req.ip}`);
+    res.status(429).json({
+      success: false,
+      error: 'Too many requests, please try again later.'
+    });
+  }
 });
 
 // Apply rate limiting to all routes except Vapi webhook
@@ -549,6 +592,53 @@ try {
       console.log(`   ⚠️  Email tables setup: ${err.message}\n`);
     }
 
+ 
+// ============================================
+// START SERVER
+// ============================================
+ 
+const cron = require('node-cron');
+
+// Start email sync service when server starts
+if (process.env.NODE_ENV !== 'test') {
+    const supportEmailService = require('./services/supportEmailService');
+    supportEmailService.testConnection()
+        .then(() => {
+            logger.info('Gmail connection successful, starting push notifications...');
+            
+            // ✅ Start Gmail watch once, 5 seconds after server starts
+            setTimeout(() => {
+                emailSyncService.startGmailWatch().catch(err => {
+                    logger.error('Initial Gmail watch failed:', err);
+                });
+            }, 5000);
+            
+            // ✅ Renew Gmail watch daily at 3 AM
+            const cron = require('node-cron');
+            cron.schedule('0 3 * * *', () => {
+                emailSyncService.startGmailWatch().catch(err => {
+                    logger.error('Gmail watch renewal failed:', err);
+                });
+            });
+            
+          // ✅ Periodic safety-net sync, catches anything missed by
+            // push notifications or a bad/expired history cursor.
+            setInterval(() => {
+                emailSyncService.sync().catch(err => {
+                    logger.error('Fallback sync failed:', err);
+                });
+            }, 30 * 60 * 1000);
+        })
+        .catch(err => {
+            logger.error('Gmail connection failed. Push notifications will not start:', err.message);
+        });
+}
+
+
+
+
+
+
     // ============================================
     // VERIFY GOOGLE API CONFIGURATION
     // ============================================
@@ -592,21 +682,7 @@ try {
 
 
 
-// Start email sync service when server starts
-if (process.env.NODE_ENV !== 'test') {
-    // Test connection first
-    const supportEmailService = require('./services/supportEmailService');
-    supportEmailService.testConnection()
-        .then(() => {
-            logger.info('Gmail connection successful, starting sync service...');
-            emailSyncService.start().catch(err => {
-                logger.error('Failed to start email sync service:', err);
-            });
-        })
-        .catch(err => {
-            logger.error('Gmail connection failed. Sync service will not start:', err.message);
-        });
-}
+
  
 // Graceful shutdown
 process.on('SIGTERM', () => {
@@ -632,7 +708,7 @@ async function startServer() {
    // Start cron job
   require('./cron/feedbackCron');
   
-  app.listen(PORT, () => {
+  server.listen(PORT, () => {
     logger.info(`Server running on port ${PORT}`);
     logger.info(`Environment: ${env.NODE_ENV}`);
     logger.info(`Frontend URL: ${env.FRONTEND_URL}`);

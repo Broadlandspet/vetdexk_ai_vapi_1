@@ -1,5 +1,3 @@
-
-// src/controllers/smsController.js
 const SmsService = require('../services/smsService');
 const logger = require('../utils/logger');
 

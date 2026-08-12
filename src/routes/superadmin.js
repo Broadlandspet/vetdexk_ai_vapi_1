@@ -108,7 +108,6 @@ router.delete('/hospitals/:id', verifyToken ,  requireRole(['superadmin']),   su
 
 // router.delete('/hospitals/:id', verifyToken ,  requireRole(['superadmin']),   superadminController.deleteHospital);
 
-router.post('/credentials', verifyToken ,  requireRole(['superadmin']), credentialController.saveCredentials);
 
 
 
@@ -131,12 +130,39 @@ router.post('/credentials-resources/delete', verifyToken ,  requireRole(['supera
 router.delete('/credentials-resources/:hospitalId', verifyToken ,  requireRole(['superadmin']), superadminController.deleteCredentialsResources);
 
 
+// router.put('/credentials-resources/:hospitalId', verifyToken, requireRole(['superadmin']), superadminController.updateCredentials);
+
+// Specific route first
+router.put('/credentials-resources/vapi-phone', verifyToken, requireRole(['superadmin']), superadminController.updateVapiPhoneNumber);
 
 
+
+
+
+/////------------------crenditials updation apis ---------------///////
+
+
+// router.post('/credentials', verifyToken ,  requireRole(['superadmin']), credentialController.saveCredentials);
 
 router.get('/credentials-resources/:hospitalId', verifyToken ,  requireRole(['superadmin']), credentialController.getCredentials);
 
 
+
+
+// router.put('/credentials-resources/vapi-phone', verifyToken, requireRole(['superadmin']), superadminController.updateVapiPhoneNumberId);
+
+
+// // Update vapi_phone_number_id (superadmin only)
+// router.put('/credentials-resources/vapi-phone', verifyToken , requireRole(['superadmin']), superadminController.updateVapiPhoneNumberId);
+
+
+
+
+// router.put('/credentials-resources/vapi-phone', superadminController.updateVapiPhoneNumber);
+
+
+// Generic route after
+router.put('/credentials-resources/:hospitalId', verifyToken, requireRole(['superadmin']), superadminController.updateCredentials);
 
 
 module.exports = router;
