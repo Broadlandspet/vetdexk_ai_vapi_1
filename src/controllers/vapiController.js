@@ -142,6 +142,7 @@ async function findAppointmentByTranscript(transcript, hospitalId) {
 // _handleEndOfCall – Fully Updated (SMS removed, Caller Email removed)
 // ============================================
 
+
 // exports._handleEndOfCall = async (message, res) => {
 //     const callData = message.call || message.artifact?.call;
 //     const transcript = message.artifact?.transcript || message.transcript;
@@ -152,19 +153,93 @@ async function findAppointmentByTranscript(transcript, hospitalId) {
 //     const duration = callData?.duration || message.durationSeconds;
 //     const summary = message.artifact?.summary || message.summary;
 //     const structuredData = message.artifact?.structuredData || message.structuredData;
-//     let hospitalId =
-//         message.hospital_id ||
-//         message.hospitalId ||
-//         message.assistantOverrides?.variableValues?.hospital_id ||
-//         callData?.hospital_id ||
-//         null;
-//     if (!hospitalId && message.assistantOverrides?.variableValues) {
-//         const vars = message.assistantOverrides.variableValues;
-//         hospitalId = vars.hospital_id || vars.hospitalId || null;
+
+//     // ─── STEP 0: Determine hospital_id from Vapi IDs (with decryption) ───
+//     let hospitalId = null;
+
+//     // Extract Vapi IDs from the message
+//     const phoneNumberId = message.phoneNumberId || message.call?.phoneNumberId || message.assistantOverrides?.phoneNumberId;
+//     const assistantId = message.assistantId || message.call?.assistantId || message.assistantOverrides?.assistantId;
+
+//     // Helper to decrypt (reuses your existing decrypt function)
+//     function decryptIfEncrypted(encryptedValue) {
+//         if (!encryptedValue) return null;
+//         try {
+//             return decrypt(encryptedValue);
+//         } catch (err) {
+//             console.log(`   ⚠️ Decryption failed: ${err.message}`);
+//             return null;
+//         }
 //     }
-//     if (hospitalId && typeof hospitalId === 'string') {
-//         hospitalId = parseInt(hospitalId, 10);
+
+//     // ── 1) Try to match by phoneNumberId (direct comparison – adjust if encrypted) ──
+//     if (phoneNumberId) {
+//         try {
+//             // If vapi_phone_number_id is also encrypted, you would need a similar loop.
+//             // For now, keeping direct comparison as before.
+//             const result = await executeQuery(
+//                 `SELECT hospital_id FROM vet_desk_ai_crendatials WHERE vapi_phone_number_id = $1 LIMIT 1`,
+//                 [phoneNumberId]
+//             );
+//             if (result.rows.length > 0) {
+//                 hospitalId = result.rows[0].hospital_id;
+//                 console.log(`   ✅ Found hospital_id ${hospitalId} from Vapi phone number ID ${phoneNumberId}`);
+//             }
+//         } catch (err) {
+//             console.log(`   ⚠️ Failed to look up hospital_id from phoneNumberId: ${err.message}`);
+//         }
 //     }
+
+//     // ── 2) Try to match by assistantId (decrypt stored IDs and compare) ──
+//     if (!hospitalId && assistantId) {
+//         try {
+//             // Fetch all rows that have assistant IDs (these are stored encrypted)
+//             const result = await executeQuery(
+//                 `SELECT hospital_id, vapi_assistant_id, vapi_feedback_assistant_id 
+//                  FROM vet_desk_ai_crendatials 
+//                  WHERE vapi_assistant_id IS NOT NULL OR vapi_feedback_assistant_id IS NOT NULL`
+//             );
+//             for (const row of result.rows) {
+//                 let decryptedId = null;
+//                 if (row.vapi_assistant_id) {
+//                     decryptedId = decryptIfEncrypted(row.vapi_assistant_id);
+//                     if (decryptedId === assistantId) {
+//                         hospitalId = row.hospital_id;
+//                         console.log(`   ✅ Found hospital_id ${hospitalId} from decrypted assistant ID match (${assistantId})`);
+//                         break;
+//                     }
+//                 }
+//                 if (!hospitalId && row.vapi_feedback_assistant_id) {
+//                     decryptedId = decryptIfEncrypted(row.vapi_feedback_assistant_id);
+//                     if (decryptedId === assistantId) {
+//                         hospitalId = row.hospital_id;
+//                         console.log(`   ✅ Found hospital_id ${hospitalId} from decrypted feedback assistant ID match (${assistantId})`);
+//                         break;
+//                     }
+//                 }
+//             }
+//         } catch (err) {
+//             console.log(`   ⚠️ Failed to look up hospital_id from assistantId: ${err.message}`);
+//         }
+//     }
+
+//     // ─── Fallback 1: From message fields (if not found via Vapi IDs) ───
+//     if (!hospitalId) {
+//         hospitalId =
+//             message.hospital_id ||
+//             message.hospitalId ||
+//             message.assistantOverrides?.variableValues?.hospital_id ||
+//             callData?.hospital_id ||
+//             null;
+//         if (hospitalId && typeof hospitalId === 'string') {
+//             hospitalId = parseInt(hospitalId, 10);
+//         }
+//         if (hospitalId) {
+//             console.log(`   ℹ️ Found hospital_id ${hospitalId} from message fields`);
+//         }
+//     }
+
+//     // ─── Fallback 2: From owner lookup (without hospital filter) ───
 //     if (!hospitalId && fromNumber) {
 //         try {
 //             const normalizedPhone = normalizePhoneForLookup(fromNumber);
@@ -174,10 +249,12 @@ async function findAppointmentByTranscript(transcript, hospitalId) {
 //             );
 //             if (ownerResult.rows.length > 0 && ownerResult.rows[0].hospital_id) {
 //                 hospitalId = ownerResult.rows[0].hospital_id;
-//                 console.log(`   ✅ Found hospital_id ${hospitalId} from ezy_vet_pet_owner for phone ${normalizedPhone}`);
+//                 console.log(`   ✅ Found hospital_id ${hospitalId} from ezy_vet_pet_owner (fallback) for phone ${normalizedPhone}`);
 //             }
 //         } catch (err) { /* ignore */ }
 //     }
+
+//     // ─── Fallback 3: From appointment lookup ────────────────────────────
 //     if (!hospitalId && vapiCallId) {
 //         try {
 //             const aptResult = await executeQuery(
@@ -186,10 +263,13 @@ async function findAppointmentByTranscript(transcript, hospitalId) {
 //             );
 //             if (aptResult.rows.length > 0 && aptResult.rows[0].hospital_id) {
 //                 hospitalId = aptResult.rows[0].hospital_id;
-//                 console.log(`   ✅ Found hospital_id ${hospitalId} from ezy_vet_appointments for call ${vapiCallId}`);
+//                 console.log(`   ✅ Found hospital_id ${hospitalId} from ezy_vet_appointments (fallback) for call ${vapiCallId}`);
 //             }
 //         } catch (err) { /* ignore */ }
 //     }
+
+//     // ─── Continue with the rest of the logic ──────────────────────────────
+
 //     console.log(`\n${'='.repeat(60)}`);
 //     console.log(`📞 CALL ENDED`);
 //     console.log(`${'='.repeat(60)}`);
@@ -210,6 +290,7 @@ async function findAppointmentByTranscript(transcript, hospitalId) {
 //     console.log(`${'-'.repeat(40)}`);
 //     console.log(transcript || 'No transcript available');
 //     console.log(`${'-'.repeat(40)}`);
+
 //     const dbSid = vapiCallId;
 //     let conversationId = null;
 //     let callId = null;
@@ -222,6 +303,7 @@ async function findAppointmentByTranscript(transcript, hospitalId) {
 //     let appointmentBooked = false;
 //     let appointmentDetails = null;
 //     let clinicPhone = null;
+
 //     if (dbSid) {
 //         try {
 //             // ─── Step 1: Find or create conversation ──────────────────
@@ -244,6 +326,7 @@ async function findAppointmentByTranscript(transcript, hospitalId) {
 //                 conversationId = newConv.rows[0].id;
 //                 console.log(`   New conversation created: ${conversationId}`);
 //             }
+
 //             // ─── Step 2: Create call record ──────────────────────────
 //             const callUuid = uuidv4();
 //             const callInsert = await executeQuery(
@@ -264,6 +347,7 @@ async function findAppointmentByTranscript(transcript, hospitalId) {
 //             );
 //             callId = callInsert.rows[0].id;
 //             console.log(`   Call created with UUID: ${callId} (hospital_id: ${hospitalId || 'NULL'})`);
+
 //             // ─── Step 3: Save transcript/recording ────────────────────
 //             if (transcript && transcript.trim().length > 0) {
 //                 await executeQuery(
@@ -280,29 +364,56 @@ async function findAppointmentByTranscript(transcript, hospitalId) {
 //                 );
 //                 console.log(`   ✅ Recording URL saved to ezy_vet_transcriptions with hospital_id: ${hospitalId || 'NULL'}`);
 //             }
-//             // ─── Step 4: Lookup pet owner (by caller's number) ──────
+
+//             // ─── Step 4: Lookup pet owner (by caller's number AND hospital_id) ───
 //             if (fromNumber) {
 //                 const normalizedPhone = normalizePhoneForLookup(fromNumber);
-//                 let ownerResult = await executeQuery(
-//                     `SELECT id, name, phone, email FROM ezy_vet_pet_owner WHERE phone = $1 LIMIT 1`,
-//                     [normalizedPhone]
-//                 );
-//                 if (ownerResult.rows.length === 0 && normalizedPhone !== fromNumber) {
+//                 let ownerResult = null;
+
+//                 // If we have a hospital_id, use it in the lookup
+//                 if (hospitalId) {
+//                     ownerResult = await executeQuery(
+//                         `SELECT id, name, phone, email FROM ezy_vet_pet_owner 
+//                          WHERE phone = $1 AND hospital_id = $2 LIMIT 1`,
+//                         [normalizedPhone, hospitalId]
+//                     );
+//                     if (ownerResult.rows.length === 0 && normalizedPhone !== fromNumber) {
+//                         ownerResult = await executeQuery(
+//                             `SELECT id, name, phone, email FROM ezy_vet_pet_owner 
+//                              WHERE phone = $1 AND hospital_id = $2 LIMIT 1`,
+//                             [fromNumber, hospitalId]
+//                         );
+//                     }
+//                 }
+
+//                 // If still no result (or no hospitalId), fallback to global lookup (but warn)
+//                 if (!ownerResult || ownerResult.rows.length === 0) {
 //                     ownerResult = await executeQuery(
 //                         `SELECT id, name, phone, email FROM ezy_vet_pet_owner WHERE phone = $1 LIMIT 1`,
-//                         [fromNumber]
+//                         [normalizedPhone]
 //                     );
+//                     if (ownerResult.rows.length === 0 && normalizedPhone !== fromNumber) {
+//                         ownerResult = await executeQuery(
+//                             `SELECT id, name, phone, email FROM ezy_vet_pet_owner WHERE phone = $1 LIMIT 1`,
+//                             [fromNumber]
+//                         );
+//                     }
+//                     if (ownerResult.rows.length > 0 && hospitalId) {
+//                         console.log(`   ⚠️ Found owner with phone ${normalizedPhone} but no hospital_id match. This owner belongs to hospital ${ownerResult.rows[0].hospital_id || 'unknown'}, but call is for hospital ${hospitalId}.`);
+//                     }
 //                 }
-//                 if (ownerResult.rows.length > 0) {
+
+//                 if (ownerResult && ownerResult.rows.length > 0) {
 //                     petOwnerId = ownerResult.rows[0].id;
 //                     petOwnerName = ownerResult.rows[0].name;
 //                     petOwnerEmail = ownerResult.rows[0].email;
 //                     registeredNumber = ownerResult.rows[0].phone;
 //                     console.log(`   ✅ Found pet owner: ${petOwnerName} (ID ${petOwnerId}, phone ${registeredNumber}, email ${petOwnerEmail || 'none'})`);
 //                 } else {
-//                     console.log(`   ⚠️ No pet owner found for number: ${fromNumber}`);
+//                     console.log(`   ⚠️ No pet owner found for number: ${fromNumber} (hospital_id: ${hospitalId || 'any'})`);
 //                 }
 //             }
+
 //             // ─── Step 5: Lookup appointment ──────────────────────────────
 //             let aptResult = null;
 //             if (dbSid) {
@@ -317,6 +428,7 @@ async function findAppointmentByTranscript(transcript, hospitalId) {
 //                     console.log(`   ✅ Found appointment by call_sid: ID ${aptResult.rows[0].id}`);
 //                 }
 //             }
+
 //             // ─── If no appointment by call_sid, try transcript fallback ──
 //             if (!aptResult || aptResult.rows.length === 0) {
 //                 console.log(`   ℹ️ No appointment found by call_sid, attempting transcript fallback...`);
@@ -332,6 +444,7 @@ async function findAppointmentByTranscript(transcript, hospitalId) {
 //                     console.log(`   ⚠️ Transcript or hospitalId missing for fallback.`);
 //                 }
 //             }
+
 //             // ─── Process appointment if found ──────────────────────────────
 //             if (aptResult && aptResult.rows.length > 0) {
 //                 const apt = aptResult.rows[0];
@@ -384,6 +497,7 @@ async function findAppointmentByTranscript(transcript, hospitalId) {
 //             } else {
 //                 console.log(`   ℹ️ No appointment found for this call.`);
 //             }
+
 //             // ─── Step 6: Insert into ezy_vet_call_logs ────────────────
 //             await executeQuery(
 //                 `INSERT INTO ezy_vet_call_logs 
@@ -418,7 +532,7 @@ async function findAppointmentByTranscript(transcript, hospitalId) {
 //             );
 //             console.log(`   ✅ ezy_vet_call_logs record saved with hospital_id: ${hospitalId || 'NULL'}`);
 
-//             // ─── Step 7: Send email to ADMIN only (caller email removed) ──
+//             // ─── Step 7: Send email to ADMIN only ──
 //             if (transcript && transcript.trim().length > 0) {
 //                 console.log(`\n📧 SENDING CALL SUMMARY EMAIL TO ADMIN...`);
 //                 console.log(`${'-'.repeat(40)}`);
@@ -470,7 +584,6 @@ async function findAppointmentByTranscript(transcript, hospitalId) {
 //                 console.log(`\n📧 No transcript available, skipping email.`);
 //             }
 //             // ─── Step 8 & 9: SMS SENDING REMOVED ──────────────────────────
-//             // All SMS logic (success and failure) has been removed.
 
 //         } catch (err) {
 //             console.error(`   ❌ Database error: ${err.message}`);
@@ -481,6 +594,13 @@ async function findAppointmentByTranscript(transcript, hospitalId) {
 //     console.log(`${'='.repeat(60)}\n`);
 //     return res.json({ received: true });
 // };
+
+
+
+
+
+
+
 exports._handleEndOfCall = async (message, res) => {
     const callData = message.call || message.artifact?.call;
     const transcript = message.artifact?.transcript || message.transcript;
@@ -495,11 +615,9 @@ exports._handleEndOfCall = async (message, res) => {
     // ─── STEP 0: Determine hospital_id from Vapi IDs (with decryption) ───
     let hospitalId = null;
 
-    // Extract Vapi IDs from the message
     const phoneNumberId = message.phoneNumberId || message.call?.phoneNumberId || message.assistantOverrides?.phoneNumberId;
     const assistantId = message.assistantId || message.call?.assistantId || message.assistantOverrides?.assistantId;
 
-    // Helper to decrypt (reuses your existing decrypt function)
     function decryptIfEncrypted(encryptedValue) {
         if (!encryptedValue) return null;
         try {
@@ -510,11 +628,8 @@ exports._handleEndOfCall = async (message, res) => {
         }
     }
 
-    // ── 1) Try to match by phoneNumberId (direct comparison – adjust if encrypted) ──
     if (phoneNumberId) {
         try {
-            // If vapi_phone_number_id is also encrypted, you would need a similar loop.
-            // For now, keeping direct comparison as before.
             const result = await executeQuery(
                 `SELECT hospital_id FROM vet_desk_ai_crendatials WHERE vapi_phone_number_id = $1 LIMIT 1`,
                 [phoneNumberId]
@@ -528,10 +643,8 @@ exports._handleEndOfCall = async (message, res) => {
         }
     }
 
-    // ── 2) Try to match by assistantId (decrypt stored IDs and compare) ──
     if (!hospitalId && assistantId) {
         try {
-            // Fetch all rows that have assistant IDs (these are stored encrypted)
             const result = await executeQuery(
                 `SELECT hospital_id, vapi_assistant_id, vapi_feedback_assistant_id 
                  FROM vet_desk_ai_crendatials 
@@ -561,7 +674,6 @@ exports._handleEndOfCall = async (message, res) => {
         }
     }
 
-    // ─── Fallback 1: From message fields (if not found via Vapi IDs) ───
     if (!hospitalId) {
         hospitalId =
             message.hospital_id ||
@@ -577,7 +689,6 @@ exports._handleEndOfCall = async (message, res) => {
         }
     }
 
-    // ─── Fallback 2: From owner lookup (without hospital filter) ───
     if (!hospitalId && fromNumber) {
         try {
             const normalizedPhone = normalizePhoneForLookup(fromNumber);
@@ -592,7 +703,6 @@ exports._handleEndOfCall = async (message, res) => {
         } catch (err) { /* ignore */ }
     }
 
-    // ─── Fallback 3: From appointment lookup ────────────────────────────
     if (!hospitalId && vapiCallId) {
         try {
             const aptResult = await executeQuery(
@@ -605,8 +715,6 @@ exports._handleEndOfCall = async (message, res) => {
             }
         } catch (err) { /* ignore */ }
     }
-
-    // ─── Continue with the rest of the logic ──────────────────────────────
 
     console.log(`\n${'='.repeat(60)}`);
     console.log(`📞 CALL ENDED`);
@@ -644,26 +752,17 @@ exports._handleEndOfCall = async (message, res) => {
 
     if (dbSid) {
         try {
-            // ─── Step 1: Find or create conversation ──────────────────
-            const num1 = fromNumber < toNumber ? fromNumber : toNumber;
-            const num2 = fromNumber < toNumber ? toNumber : fromNumber;
-
-            const convResult = await executeQuery(
-                `SELECT id FROM ezy_vet_conversations WHERE number_1 = $1 AND number_2 = $2`,
-                [num1, num2]
+            // ─── Step 1: Find or create conversation (unique per hospital + number pair) ───
+            const newConv = await executeQuery(
+                `INSERT INTO ezy_vet_conversations (from_number, to_number, hospital_id)
+                 VALUES ($1, $2, $3)
+                 ON CONFLICT (hospital_id, number_1, number_2)
+                 DO UPDATE SET updated_at = NOW()
+                 RETURNING id`,
+                [fromNumber, toNumber, hospitalId || null]
             );
-            if (convResult.rows.length > 0) {
-                conversationId = convResult.rows[0].id;
-                console.log(`   Existing conversation: ${conversationId}`);
-            } else {
-                const newConv = await executeQuery(
-                    `INSERT INTO ezy_vet_conversations (from_number, to_number, hospital_id)
-                     VALUES ($1, $2, $3) RETURNING id`,
-                    [fromNumber, toNumber, hospitalId || null]
-                );
-                conversationId = newConv.rows[0].id;
-                console.log(`   New conversation created: ${conversationId}`);
-            }
+            conversationId = newConv.rows[0].id;
+            console.log(`   Conversation ID: ${conversationId} (hospital_id: ${hospitalId || 'NULL'})`);
 
             // ─── Step 2: Create call record ──────────────────────────
             const callUuid = uuidv4();
@@ -708,7 +807,6 @@ exports._handleEndOfCall = async (message, res) => {
                 const normalizedPhone = normalizePhoneForLookup(fromNumber);
                 let ownerResult = null;
 
-                // If we have a hospital_id, use it in the lookup
                 if (hospitalId) {
                     ownerResult = await executeQuery(
                         `SELECT id, name, phone, email FROM ezy_vet_pet_owner 
@@ -724,7 +822,6 @@ exports._handleEndOfCall = async (message, res) => {
                     }
                 }
 
-                // If still no result (or no hospitalId), fallback to global lookup (but warn)
                 if (!ownerResult || ownerResult.rows.length === 0) {
                     ownerResult = await executeQuery(
                         `SELECT id, name, phone, email FROM ezy_vet_pet_owner WHERE phone = $1 LIMIT 1`,
@@ -767,7 +864,6 @@ exports._handleEndOfCall = async (message, res) => {
                 }
             }
 
-            // ─── If no appointment by call_sid, try transcript fallback ──
             if (!aptResult || aptResult.rows.length === 0) {
                 console.log(`   ℹ️ No appointment found by call_sid, attempting transcript fallback...`);
                 if (transcript && hospitalId) {
@@ -783,7 +879,6 @@ exports._handleEndOfCall = async (message, res) => {
                 }
             }
 
-            // ─── Process appointment if found ──────────────────────────────
             if (aptResult && aptResult.rows.length > 0) {
                 const apt = aptResult.rows[0];
                 appointmentId = apt.id;
@@ -932,8 +1027,6 @@ exports._handleEndOfCall = async (message, res) => {
     console.log(`${'='.repeat(60)}\n`);
     return res.json({ received: true });
 };
-
-
 
 
 // ============================================

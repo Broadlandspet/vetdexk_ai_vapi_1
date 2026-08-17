@@ -67,8 +67,7 @@ exports.submitQuery = async (req, res) => {
                 <p>You can reply to this email to add more information.</p>
                 <hr>
                 <p style="color:#6c757d;font-size:12px;">
-                    Ticket #${ticket.ticket_number} | 
-                    <a href="${frontendUrl}/tickets/${ticket.id}">View in dashboard</a>
+                    Ticket #${ticket.ticket_number} 
                 </p>
             </body>
             </html>

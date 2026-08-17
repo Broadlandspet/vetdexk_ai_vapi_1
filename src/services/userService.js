@@ -1,7 +1,3 @@
-
-
-
-
 const { executeQuery } = require('../config/database');
 const logger = require('../utils/logger');
 const bcrypt = require('bcrypt');
@@ -199,7 +195,7 @@ exports.getRegistrationHospitals = async function() {
 exports.getUserById = async function(userId) {
     try {
         const result = await executeQuery(
-            `SELECT id, name, email, username, role, is_active, created_at, last_login, hospital_id,  
+            `SELECT id, name, email, username, role, is_active, created_at, last_login, hospital_id  
              FROM users WHERE id = $1`,
             [userId]
         );

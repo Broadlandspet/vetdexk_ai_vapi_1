@@ -1,7 +1,7 @@
 
 const ezyvetService = require('../services/ezyvetService');
 const logger = require('../utils/logger');
-
+const { executeQuery } = require('../config/database');
 const moment = require('moment-timezone');
 
 
@@ -13,6 +13,31 @@ function parseArrayParam(value) {
     if (typeof value === 'string') return value.split(',').map(s => s.trim()).filter(Boolean);
     return [value];
 }
+
+
+
+
+// Helper to fetch breed name from local mapping table
+const getBreedName = async (hospitalId, breedId) => {
+    if (!breedId) return null;
+    try {
+        const result = await executeQuery(
+            `SELECT bread_name FROM ezy_vet_used_animal_breads 
+             WHERE hospital_id = $1 AND bread_id = $2 AND active = '1' 
+             LIMIT 1`,
+            [hospitalId, breedId]
+        );
+        if (result.rows && result.rows.length > 0) {
+            return result.rows[0].bread_name;
+        }
+        return null;
+    } catch (error) {
+        logger.error(`Error fetching breed name: ${error.message}`);
+        return null;
+    }
+};
+
+
 
 
 
@@ -397,6 +422,179 @@ exports.getResourceAvailability = async (req, res) => {
 // ─── NEW: CREATE CONTACT + ANIMAL (PATIENT) ───────────────────────────
 
 
+// exports.createNewEntry = async (req, res) => {
+//     try {
+//         const {
+//             hospital_id,
+//             owner_full_name,
+//             mobile_phone,
+//             email_address,
+//             pet_name,
+//             pet_sex,           
+//             pet_species,      
+//             pet_color,
+//             pet_breed
+//         } = req.body;
+
+//         const hospitalId = parseInt(hospital_id, 10);
+//         if (!hospitalId) {
+//             return res.status(400).json({
+//                 success: false,
+//                 error: 'Missing hospital_id in request body'
+//             });
+//         }
+
+//         // Validate required fields (pet_breed is now optional)
+//         if (!owner_full_name) {
+//             return res.status(400).json({ success: false, error: 'owner_full_name is required' });
+//         }
+//         if (!mobile_phone) {
+//             return res.status(400).json({ success: false, error: 'mobile_phone is required' });
+//         }
+//         if (!pet_name) {
+//             return res.status(400).json({ success: false, error: 'pet_name is required' });
+//         }
+//         if (!pet_sex) {
+//             return res.status(400).json({ success: false, error: 'pet_sex is required (Male or Female)' });
+//         }
+//         if (!pet_species) {
+//             return res.status(400).json({ success: false, error: 'pet_species is required (Dog, Cat, Bird, or Unknown)' });
+//         }
+
+//         // ─── HELPER: Normalize breed value ──────────────────────────────
+//         const normalizeBreed = (breed) => {
+//             if (!breed) return null;
+//             const breedStr = String(breed).trim();
+            
+//             // If it's "Unknown" or "unknown" → treat as null
+//             if (breedStr.toLowerCase() === 'unknown') {
+//                 return null;
+//             }
+            
+//             // If it's not a number → treat as null
+//             if (isNaN(breedStr)) {
+//                 return null;
+//             }
+            
+//             const breedNumber = parseInt(breedStr, 10);
+            
+//             // ✅ NEW: If it's 254 (invalid default) → treat as null
+//             if (breedNumber === 254) {
+//                 return null;
+//             }
+            
+//             return breedStr;
+//         };
+
+//         const normalizedBreed = normalizeBreed(pet_breed);
+
+//         // ─── MAP pet_sex (String → Numeric ID) ──────────────────────────
+//         const sexMapping = {
+//             'male': 1,
+//             'female': 3
+//         };
+//         const sexValue = typeof pet_sex === 'string' ? pet_sex.toLowerCase() : pet_sex;
+//         const sexId = sexMapping[sexValue];
+
+//         if (sexId === undefined) {
+//             return res.status(400).json({
+//                 success: false,
+//                 error: 'Invalid pet_sex. Allowed values: "Male" or "Female"'
+//             });
+//         }
+
+//         // ─── MAP pet_species (String → Numeric ID) ──────────────────────
+//         const speciesMapping = {
+//             'dog': 1,
+//             'cat': 2,
+//             'bird': 7,
+//             'unknown': 3
+//         };
+//         const speciesValue = typeof pet_species === 'string' ? pet_species.toLowerCase() : pet_species;
+//         const speciesId = speciesMapping[speciesValue];
+
+//         if (speciesId === undefined) {
+//             return res.status(400).json({
+//                 success: false,
+//                 error: 'Invalid pet_species. Allowed values: "Dog", "Cat", "Bird", or "Unknown"'
+//             });
+//         }
+
+//         // Split owner_full_name into first and last name
+//         const nameParts = owner_full_name.trim().split(/\s+/);
+//         const firstName = nameParts[0] || '';
+//         const lastName = nameParts.slice(1).join(' ') || '';
+
+//         // 1. Create contact in ezyVet
+//         const contactData = {
+//             first_name: firstName,
+//             last_name: lastName,
+//             mobile_phone: mobile_phone,
+//             email_address: email_address
+//         };
+//         const contactResult = await ezyvetService.createContact(hospitalId, contactData);
+
+//         // 2. Create animal in ezyVet linked to the contact
+//         const animalData = {
+//             contact_id: contactResult.id,
+//             name: pet_name,
+//             sex_id: sexId,
+//             animalcolour_id: pet_color || null,
+//             species_id: speciesId,
+//             breed_id: normalizedBreed ? parseInt(normalizedBreed, 10) : null   // ← 254 becomes null
+//         };
+//         const animalResult = await ezyvetService.createAnimal(hospitalId, animalData);
+
+//         // 3. Save to local database
+//         const ownerDbData = {
+//             name: owner_full_name,
+//             phone: mobile_phone,
+//             email: email_address || null,
+//             ezy_vet_contact_id: contactResult.id,
+//             ezyVetContactCode: contactResult.code
+//         };
+//         const petDbData = {
+//             pet_name: pet_name,
+//             sex: pet_sex,
+//             species: pet_species,
+//             breed: normalizedBreed,                    // ← 254 becomes null
+//             ezy_vet_breed_id: normalizedBreed,         // ← 254 becomes null
+//             ezy_vet_contact_id: contactResult.id,
+//             ezyVetContactCode: contactResult.code,
+//             ezy_vet_pet_code: animalResult.code,
+//             ezy_vet_pet_id: animalResult.id
+//         };
+//         const savedData = await ezyvetService.saveOwnerAndPetToDb(hospitalId, ownerDbData, petDbData);
+
+//         // 4. Build structured response
+//         return res.status(200).json({
+//             success: true,
+//             data: {
+//                 hospital_id: hospitalId,
+//                 pet_owner_id: savedData.ownerId,
+//                 pet_id: savedData.petId,
+//                 contact_id: contactResult.id,
+//                 owner_name: owner_full_name,
+//                 mobile_phone: mobile_phone,
+//                 email_address: email_address,
+//                 ezyVetContactCode: contactResult.code,
+//                 pet_name: animalResult.name,
+//                 pet_code: animalResult.code,
+//                 ezy_vet_pet_id: animalResult.id
+//             }
+//         });
+
+//     } catch (error) {
+//         logger.error(`Error in createNewEntry: ${error.message}`);
+//         return res.status(500).json({
+//             success: false,
+//             error: error.message
+//         });
+//     }
+// };
+
+
+
 exports.createNewEntry = async (req, res) => {
     try {
         const {
@@ -463,6 +661,14 @@ exports.createNewEntry = async (req, res) => {
 
         const normalizedBreed = normalizeBreed(pet_breed);
 
+        // ─── Fetch breed name from local mapping table ──────────────────
+        let breedName = null;
+        if (normalizedBreed) {
+            breedName = await getBreedName(hospitalId, normalizedBreed);
+        }
+        // If breed name found, use it; otherwise keep the numeric ID as fallback
+        const breedToSave = breedName || normalizedBreed;
+
         // ─── MAP pet_sex (String → Numeric ID) ──────────────────────────
         const sexMapping = {
             'male': 1,
@@ -516,7 +722,7 @@ exports.createNewEntry = async (req, res) => {
             sex_id: sexId,
             animalcolour_id: pet_color || null,
             species_id: speciesId,
-            breed_id: normalizedBreed ? parseInt(normalizedBreed, 10) : null   // ← 254 becomes null
+            breed_id: normalizedBreed ? parseInt(normalizedBreed, 10) : null   // ← still numeric for ezyVet
         };
         const animalResult = await ezyvetService.createAnimal(hospitalId, animalData);
 
@@ -532,8 +738,8 @@ exports.createNewEntry = async (req, res) => {
             pet_name: pet_name,
             sex: pet_sex,
             species: pet_species,
-            breed: normalizedBreed,                    // ← 254 becomes null
-            ezy_vet_breed_id: normalizedBreed,         // ← 254 becomes null
+            breed: breedToSave,                    // ← now stores name (or numeric fallback)
+            ezy_vet_breed_id: normalizedBreed,    // ← always numeric ID
             ezy_vet_contact_id: contactResult.id,
             ezyVetContactCode: contactResult.code,
             ezy_vet_pet_code: animalResult.code,
@@ -555,7 +761,8 @@ exports.createNewEntry = async (req, res) => {
                 ezyVetContactCode: contactResult.code,
                 pet_name: animalResult.name,
                 pet_code: animalResult.code,
-                ezy_vet_pet_id: animalResult.id
+                ezy_vet_pet_id: animalResult.id,
+                pet_breed: breedToSave            // <-- NEW field in response
             }
         });
 
@@ -569,7 +776,135 @@ exports.createNewEntry = async (req, res) => {
 };
 
 
+
+
+
 // ─── NEW: CREATE PET (ANIMAL) AND LINK TO EXISTING CONTACT ────────────
+
+
+
+// exports.createPet = async (req, res) => {
+//     try {
+//         const {
+//             hospital_id,
+//             contact_id,
+//             pet_owner_id,
+//             pet_name,
+//             pet_sex,
+//             pet_species,
+//             pet_color,
+//             pet_breed
+//         } = req.body;
+
+//         const hospitalId = parseInt(hospital_id, 10);
+//         if (!hospitalId) {
+//             return res.status(400).json({
+//                 success: false,
+//                 error: 'Missing hospital_id in request body'
+//             });
+//         }
+
+//         // Validate required fields (pet_breed is now optional)
+//         if (!contact_id) {
+//             return res.status(400).json({ success: false, error: 'contact_id is required' });
+//         }
+//         if (!pet_owner_id) {
+//             return res.status(400).json({ success: false, error: 'pet_owner_id is required' });
+//         }
+//         if (!pet_name) {
+//             return res.status(400).json({ success: false, error: 'pet_name is required' });
+//         }
+//         if (!pet_sex) {
+//             return res.status(400).json({ success: false, error: 'pet_sex is required (Male or Female)' });
+//         }
+//         if (!pet_species) {
+//             return res.status(400).json({ success: false, error: 'pet_species is required (Dog, Cat, Bird, or Unknown)' });
+//         }
+
+//         // ✅ NORMALIZE BREED HERE – 254 becomes null
+//         const normalizedBreed = normalizeBreed(pet_breed);
+
+//         // ─── MAP pet_sex (String → Numeric ID) ──────────────────────────
+//         const sexMapping = {
+//             'male': 1,
+//             'female': 3
+//         };
+//         const sexValue = typeof pet_sex === 'string' ? pet_sex.toLowerCase() : pet_sex;
+//         const sexId = sexMapping[sexValue];
+
+//         if (sexId === undefined) {
+//             return res.status(400).json({
+//                 success: false,
+//                 error: 'Invalid pet_sex. Allowed values: "Male" or "Female"'
+//             });
+//         }
+
+//         // ─── MAP pet_species (String → Numeric ID) ──────────────────────
+//         const speciesMapping = {
+//             'dog': 1,
+//             'cat': 2,
+//             'bird': 7,
+//             'unknown': 3
+//         };
+//         const speciesValue = typeof pet_species === 'string' ? pet_species.toLowerCase() : pet_species;
+//         const speciesId = speciesMapping[speciesValue];
+
+//         if (speciesId === undefined) {
+//             return res.status(400).json({
+//                 success: false,
+//                 error: 'Invalid pet_species. Allowed values: "Dog", "Cat", "Bird", or "Unknown"'
+//             });
+//         }
+
+//         // ─── 1. Create animal in ezyVet ──────────────────────────────────
+//         // ✅ USE normalizedBreed – 254 becomes null
+//         const animalData = {
+//             contact_id: parseInt(contact_id, 10),
+//             name: pet_name,
+//             sex_id: sexId,
+//             animalcolour_id: pet_color || null,
+//             species_id: speciesId,
+//             breed_id: normalizedBreed ? parseInt(normalizedBreed, 10) : null   // ← 254 → null!
+//         };
+//         const animalResult = await ezyvetService.createAnimal(hospitalId, animalData);
+
+//         // ─── 2. Save pet to local DB ─────────────────────────────────────
+//         const petDbData = {
+//             pet_name: pet_name,
+//             sex: pet_sex,
+//             species: pet_species,
+//             breed: normalizedBreed,                      // ← 254 → null
+//             ezy_vet_breed_id: normalizedBreed,           // ← 254 → null
+//             ezy_vet_contact_id: String(contact_id),
+//             ezyVetContactCode: null,
+//             ezy_vet_pet_code: animalResult.code,
+//             ezy_vet_pet_id: animalResult.id
+//         };
+//         // await ezyvetService.savePetToDb(hospitalId, parseInt(pet_owner_id, 10), petDbData);
+//        const savedData = await ezyvetService.savePetToDb(hospitalId, parseInt(pet_owner_id, 10), petDbData);
+    
+
+//         // ─── 3. Build response ──────────────────────────────────────────
+//         return res.status(200).json({
+//             success: true,
+//             data: {
+//                 // pet_id: animalResult.id,
+//                 pet_id: savedData.petId,    
+//                 pet_code: animalResult.code,
+//                 pet_name: animalResult.name,
+//                 contact_id: contact_id,
+//                 pet_owner_id: pet_owner_id
+//             }
+//         });
+
+//     } catch (error) {
+//         logger.error(`Error in createPet: ${error.message}`);
+//         return res.status(500).json({
+//             success: false,
+//             error: error.message
+//         });
+//     }
+// };
 
 
 
@@ -594,7 +929,7 @@ exports.createPet = async (req, res) => {
             });
         }
 
-        // Validate required fields (pet_breed is now optional)
+        // Validate required fields
         if (!contact_id) {
             return res.status(400).json({ success: false, error: 'contact_id is required' });
         }
@@ -611,17 +946,23 @@ exports.createPet = async (req, res) => {
             return res.status(400).json({ success: false, error: 'pet_species is required (Dog, Cat, Bird, or Unknown)' });
         }
 
-        // ✅ NORMALIZE BREED HERE – 254 becomes null
+        // Normalise breed (254 → null)
         const normalizedBreed = normalizeBreed(pet_breed);
 
-        // ─── MAP pet_sex (String → Numeric ID) ──────────────────────────
+        // ─── Fetch breed name from mapping (if numeric ID exists) ──
+        let breedToSave = normalizedBreed;
+        if (normalizedBreed) {
+            const name = await getBreedName(hospitalId, normalizedBreed);
+            if (name) breedToSave = name;   // use the name if found
+        }
+
+        // ─── MAP pet_sex ──────────────────────────────────────────────
         const sexMapping = {
             'male': 1,
             'female': 3
         };
         const sexValue = typeof pet_sex === 'string' ? pet_sex.toLowerCase() : pet_sex;
         const sexId = sexMapping[sexValue];
-
         if (sexId === undefined) {
             return res.status(400).json({
                 success: false,
@@ -629,7 +970,7 @@ exports.createPet = async (req, res) => {
             });
         }
 
-        // ─── MAP pet_species (String → Numeric ID) ──────────────────────
+        // ─── MAP pet_species ──────────────────────────────────────────
         const speciesMapping = {
             'dog': 1,
             'cat': 2,
@@ -638,7 +979,6 @@ exports.createPet = async (req, res) => {
         };
         const speciesValue = typeof pet_species === 'string' ? pet_species.toLowerCase() : pet_species;
         const speciesId = speciesMapping[speciesValue];
-
         if (speciesId === undefined) {
             return res.status(400).json({
                 success: false,
@@ -646,44 +986,42 @@ exports.createPet = async (req, res) => {
             });
         }
 
-        // ─── 1. Create animal in ezyVet ──────────────────────────────────
-        // ✅ USE normalizedBreed – 254 becomes null
+        // ─── 1. Create animal in ezyVet (send numeric breed_id) ──────
         const animalData = {
             contact_id: parseInt(contact_id, 10),
             name: pet_name,
             sex_id: sexId,
             animalcolour_id: pet_color || null,
             species_id: speciesId,
-            breed_id: normalizedBreed ? parseInt(normalizedBreed, 10) : null   // ← 254 → null!
+            breed_id: normalizedBreed ? parseInt(normalizedBreed, 10) : null
         };
         const animalResult = await ezyvetService.createAnimal(hospitalId, animalData);
 
-        // ─── 2. Save pet to local DB ─────────────────────────────────────
+        // ─── 2. Save pet to local DB ──────────────────────────────────
         const petDbData = {
             pet_name: pet_name,
             sex: pet_sex,
             species: pet_species,
-            breed: normalizedBreed,                      // ← 254 → null
-            ezy_vet_breed_id: normalizedBreed,           // ← 254 → null
+            breed: breedToSave,                     // <-- now stores name (or numeric fallback)
+            ezy_vet_breed_id: normalizedBreed,     // <-- always numeric ID (or null)
             ezy_vet_contact_id: String(contact_id),
             ezyVetContactCode: null,
             ezy_vet_pet_code: animalResult.code,
             ezy_vet_pet_id: animalResult.id
         };
-        // await ezyvetService.savePetToDb(hospitalId, parseInt(pet_owner_id, 10), petDbData);
-       const savedData = await ezyvetService.savePetToDb(hospitalId, parseInt(pet_owner_id, 10), petDbData);
-    
+        const savedData = await ezyvetService.savePetToDb(hospitalId, parseInt(pet_owner_id, 10), petDbData);
 
         // ─── 3. Build response ──────────────────────────────────────────
         return res.status(200).json({
             success: true,
             data: {
-                // pet_id: animalResult.id,
-                pet_id: savedData.petId,    
+                pet_id: savedData.petId,
                 pet_code: animalResult.code,
                 pet_name: animalResult.name,
                 contact_id: contact_id,
-                pet_owner_id: pet_owner_id
+                pet_owner_id: pet_owner_id,
+                pet_breed: breedToSave,           // <-- added
+                ezy_vet_pet_id: animalResult.id   // <-- added
             }
         });
 
@@ -695,7 +1033,6 @@ exports.createPet = async (req, res) => {
         });
     }
 };
-
 
 
 

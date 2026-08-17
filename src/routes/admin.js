@@ -6,6 +6,10 @@ const appointmentController = require('../controllers/appointmentController');
 const slotController = require('../controllers/slotController');
 
 
+const ezyvetController = require('../controllers/ezyvetController');
+
+const animalController = require('../controllers/animalController');
+
 // Import all admin controller methods
 const {
     getAllCalls,
@@ -228,7 +232,23 @@ router.post('/feedback-call', (req, res, next) =>
 
 
 
+///---------ezy vet integation of the appointemten book -----///////////
 
+
+router.post('/resources/availabilityslots/instant',  ezyvetController.instantAvailabilitySlots);
+
+
+router.post('/create/patient', ezyvetController.createNewEntry);
+
+
+router.post('/create/pet', ezyvetController.createPet);
+
+router.post('/book/appointment', ezyvetController.bookAppointment);
+
+
+router.post('/lookup/patient', ezyvetController.lookupPatient);  
+
+router.post('/cancel/appointment', ezyvetController.cancelAppointment);
 
 
 
@@ -254,6 +274,8 @@ router.get('/credentials-resources', adminController.getAdminCredentials);
 
 router.put('/credentials-resources', adminController.updateAdminCredentials);
 
+
+router.post('/breeds/search', animalController.searchBreeds);
 
 
 

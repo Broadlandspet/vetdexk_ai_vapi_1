@@ -20,13 +20,6 @@ const EZY_VET_API_BASE_V1 = process.env.EZY_VET_API_BASE_V1 || 'https://api.tria
 
 
 
-
-
-
-
-
-
-
 // ─── IN-MEMORY CACHES ─────────────────────────────────────────────────
 const tokenCache = {};
 const appointmentTypeCache = {};

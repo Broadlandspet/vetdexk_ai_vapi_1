@@ -7,21 +7,6 @@ const credentialService = require('../services/credentialService');
 
 
 // // ─── HELPER: Get hospital_id from request (priority: token → query → body) ──
-// function getHospitalId(req) {
-//     // From JWT token / user object
-//     const fromToken = req.hospitalId || (req.user && req.user.hospital_id);
-//     if (fromToken) return fromToken;
-
-//     // From query
-//     const fromQuery = req.query?.hospital_id;
-//     if (fromQuery) return parseInt(fromQuery, 10);
-
-//     // From body
-//     const fromBody = req.body?.hospital_id;
-//     if (fromBody) return parseInt(fromBody, 10);
-     
-//     return null;
-// }
 
 function getHospitalId(req) {
     // Only from JWT token / user object – never trust client-provided query/body
