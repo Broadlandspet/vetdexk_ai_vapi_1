@@ -7,46 +7,418 @@ const bcrypt = require('bcrypt');
 /**
  * Create a new user
  */
+// exports.createUser = async function(userData) {
+//     try {
+//         // Validate required fields
+//         if (!userData.name) {
+//             throw new Error('Name is required');
+//         }
+//         if (!userData.email) {
+//             throw new Error('Email is required');
+//         }
+//         if (!userData.username) {
+//             throw new Error('Username is required');
+//         }
+//         if (!userData.password) {
+//             throw new Error('Password is required');
+//         }
+//         if (!userData.mobile_number) {
+//             throw new Error('Mobile number is required');
+//         }
+
+//         // ✅ Set default role to 'admin' if not provided
+//         const role = userData.role || 'admin';
+
+//         // Validate role
+//         const allowedRoles = ['superadmin', 'admin', 'user', 'viewer'];
+//         if (!allowedRoles.includes(role)) {
+//             throw new Error('Invalid role. Allowed roles are superadmin, admin, user, and viewer.');
+//         }
+
+//         // Validate registration status
+//         const allowedStatuses = ['pending', 'approved', 'rejected'];
+//         const registrationStatus = userData.registration_status || 'pending';
+//         if (!allowedStatuses.includes(registrationStatus)) {
+//             throw new Error('Invalid registration status. Allowed statuses are pending, approved, and rejected.');
+//         }
+
+//         // Hash password
+//         const saltRounds = 10;
+//         const passwordHash = await bcrypt.hash(userData.password, saltRounds);
+
+//         // ✅ Insert user with all fields - role is now properly defined
+//         const result = await executeQuery(
+//             `
+//             INSERT INTO users (
+//                 name,
+//                 email,
+//                 username,
+//                 role,
+//                 password_hash,
+//                 is_active,
+//                 mobile_number,
+//                 dob,
+//                 registration_status,
+//                 hospital_id,
+//                 demo_request_id,
+//                 plan_id,
+//                 plan_name,
+//                 plan_price,
+//                 plan_currency,
+//                 plan_interval,
+//                 plan_status,
+//                 payment_status,
+//                 registration_source,
+//                 created_at,
+//                 updated_at
+//             )
+//             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NOW(), NOW())
+//             RETURNING
+//                 id,
+//                 name,
+//                 email,
+//                 username,
+//                 role,
+//                 is_active,
+//                 mobile_number,
+//                 dob,
+//                 registration_status,
+//                 hospital_id,
+//                 demo_request_id,
+//                 plan_id,
+//                 plan_name,
+//                 plan_price,
+//                 plan_currency,
+//                 plan_interval,
+//                 plan_status,
+//                 payment_status,
+//                 registration_source,
+//                 created_at,
+//                 updated_at
+//             `,
+//             [
+//                 userData.name.trim(),
+//                 userData.email.trim().toLowerCase(),
+//                 userData.username.trim(),
+//                 role, // ✅ Now properly defined as 'admin' by default
+//                 passwordHash,
+//                 false, // is_active: false until approved
+//                 userData.mobile_number.trim(),
+//                 userData.dob || null,
+//                 registrationStatus,
+//                 null, // hospital_id: null until assigned
+//                 userData.demo_request_id || null,
+//                 userData.plan_id || null,
+//                 userData.plan_name || null,
+//                 userData.plan_price || null,
+//                 userData.plan_currency || '$',
+//                 userData.plan_interval || 'month',
+//                 'pending', // plan_status
+//                 'completed', // payment_status: payment already done
+//                 userData.source || 'demo_feedback_payment'
+//             ]
+//         );
+
+//         const newUser = result.rows[0];
+
+//         // Update book_demo with user reference
+//         if (userData.demo_request_id) {
+//             await executeQuery(
+//                 `UPDATE book_demo
+//                  SET
+//                    payment_status = 'completed',
+//                    status = 'registered',
+//                    updated_at = NOW()
+//                  WHERE id = $1`,
+//                 [userData.demo_request_id]
+//             );
+//             logger.info(`Updated demo request ${userData.demo_request_id} with payment status`);
+//         }
+
+//         // ✅ Log registration (using console/logger instead of audit_logs)
+//         logger.info(`User created successfully: ${userData.email} (ID: ${newUser.id})`, {
+//             name: userData.name,
+//             email: userData.email,
+//             username: userData.username,
+//             role: role,
+//             mobile_number: userData.mobile_number,
+//             plan_name: userData.plan_name || null,
+//             plan_price: userData.plan_price || null,
+//             demo_request_id: userData.demo_request_id || null,
+//             registration_status: registrationStatus,
+//             source: userData.source || 'demo_feedback_payment'
+//         });
+
+//         return newUser;
+
+//     } catch (error) {
+//         logger.error('Error creating user:', error);
+
+//         // Handle duplicate key violations
+//         if (error.code === '23505') {
+//             if (error.constraint === 'users_email_key') {
+//                 throw new Error('Email already exists');
+//             } else if (error.constraint === 'users_username_key') {
+//                 throw new Error('Username already exists');
+//             }
+//         }
+
+//         throw error;
+//     }
+// };
+
+
+// exports.createUser = async function(userData) {
+//     try {
+//         // Validate required fields
+//         if (!userData.name) {
+//             throw new Error('Name is required');
+//         }
+//         if (!userData.email) {
+//             throw new Error('Email is required');
+//         }
+//         if (!userData.username) {
+//             throw new Error('Username is required');
+//         }
+//         if (!userData.password) {
+//             throw new Error('Password is required');
+//         }
+//         if (!userData.mobile_number) {
+//             throw new Error('Mobile number is required');
+//         }
+
+//         // ✅ Set default role to 'admin' if not provided
+//         const role = userData.role || 'admin';
+
+//         // Validate role
+//         const allowedRoles = ['superadmin', 'admin', 'user', 'viewer'];
+//         if (!allowedRoles.includes(role)) {
+//             throw new Error('Invalid role. Allowed roles are superadmin, admin, user, and viewer.');
+//         }
+
+//         // Validate registration status
+//         const allowedStatuses = ['pending', 'approved', 'rejected'];
+//         const registrationStatus = userData.registration_status || 'pending';
+//         if (!allowedStatuses.includes(registrationStatus)) {
+//             throw new Error('Invalid registration status. Allowed statuses are pending, approved, and rejected.');
+//         }
+
+//         // ── NEW: figure out the REAL plan_status before inserting ──
+//         // By the time someone registers, checkout.session.completed already
+//         // fired minutes/hours earlier, and customer.subscription.created
+//         // already wrote a row into `subscriptions` with the true Stripe
+//         // status. That earlier webhook couldn't update this user's
+//         // plan_status (the user didn't exist yet) — so we pull it here
+//         // instead of hardcoding 'pending', which would otherwise sit wrong
+//         // until some unrelated future webhook happens to fire.
+//         const STRIPE_TO_PLAN_STATUS = {
+//             active: 'active',
+//             trialing: 'active',
+//             past_due: 'active',
+//             incomplete: 'pending',
+//             incomplete_expired: 'cancelled',
+//             canceled: 'cancelled',
+//             unpaid: 'cancelled',
+//         };
+
+//         let planStatus = 'pending'; // safe default if no subscription row exists yet (shouldn't normally happen, but don't crash registration over it)
+//         if (userData.demo_request_id) {
+//             try {
+//                 const subResult = await executeQuery(
+//                     `SELECT status FROM subscriptions WHERE booking_id = $1 ORDER BY updated_at DESC LIMIT 1`,
+//                     [userData.demo_request_id]
+//                 );
+//                 if (subResult.rows.length > 0) {
+//                     planStatus = STRIPE_TO_PLAN_STATUS[subResult.rows[0].status] || 'pending';
+//                 } else {
+//                     logger.warn(`No subscriptions row found for booking #${userData.demo_request_id} at registration time — plan_status defaulting to 'pending'. Check that customer.subscription.created fired and was processed before registration.`);
+//                 }
+//             } catch (lookupErr) {
+//                 logger.warn('Could not look up subscription status at registration time:', lookupErr);
+//             }
+//         }
+
+//         // Hash password
+//         const saltRounds = 10;
+//         const passwordHash = await bcrypt.hash(userData.password, saltRounds);
+
+//         // ✅ Insert user with all fields - role is now properly defined
+//         const result = await executeQuery(
+//             `
+//             INSERT INTO users (
+//                 name,
+//                 email,
+//                 username,
+//                 role,
+//                 password_hash,
+//                 is_active,
+//                 mobile_number,
+//                 dob,
+//                 registration_status,
+//                 hospital_id,
+//                 demo_request_id,
+//                 plan_id,
+//                 plan_name,
+//                 plan_price,
+//                 plan_currency,
+//                 plan_interval,
+//                 plan_status,
+//                 payment_status,
+//                 registration_source,
+//                 created_at,
+//                 updated_at
+//             )
+//             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NOW(), NOW())
+//             RETURNING
+//                 id,
+//                 name,
+//                 email,
+//                 username,
+//                 role,
+//                 is_active,
+//                 mobile_number,
+//                 dob,
+//                 registration_status,
+//                 hospital_id,
+//                 demo_request_id,
+//                 plan_id,
+//                 plan_name,
+//                 plan_price,
+//                 plan_currency,
+//                 plan_interval,
+//                 plan_status,
+//                 payment_status,
+//                 registration_source,
+//                 created_at,
+//                 updated_at
+//             `,
+//             [
+//                 userData.name.trim(),
+//                 userData.email.trim().toLowerCase(),
+//                 userData.username.trim(),
+//                 role, // ✅ Now properly defined as 'admin' by default
+//                 passwordHash,
+//                 false, // is_active: false until approved
+//                 userData.mobile_number.trim(),
+//                 userData.dob || null,
+//                 registrationStatus,
+//                 null, // hospital_id: null until assigned
+//                 userData.demo_request_id || null,
+//                 userData.plan_id || null,
+//                 userData.plan_name || null,
+//                 userData.plan_price || null,
+//                 userData.plan_currency || '$',
+//                 userData.plan_interval || 'month',
+//                 planStatus, // ← was hardcoded 'pending'; now reflects real Stripe status
+//                 'completed', // payment_status: payment already done
+//                 userData.source || 'demo_feedback_payment'
+//             ]
+//         );
+
+//         const newUser = result.rows[0];
+
+//         // Update book_demo with user reference
+//         if (userData.demo_request_id) {
+//             await executeQuery(
+//                 `UPDATE book_demo
+//                  SET
+//                    payment_status = 'completed',
+//                    status = 'registered',
+//                    updated_at = NOW()
+//                  WHERE id = $1`,
+//                 [userData.demo_request_id]
+//             );
+//             logger.info(`Updated demo request ${userData.demo_request_id} with payment status`);
+//         }
+
+//         // ✅ Log registration (using console/logger instead of audit_logs)
+//         logger.info(`User created successfully: ${userData.email} (ID: ${newUser.id})`, {
+//             name: userData.name,
+//             email: userData.email,
+//             username: userData.username,
+//             role: role,
+//             mobile_number: userData.mobile_number,
+//             plan_name: userData.plan_name || null,
+//             plan_price: userData.plan_price || null,
+//             plan_status: planStatus,
+//             demo_request_id: userData.demo_request_id || null,
+//             registration_status: registrationStatus,
+//             source: userData.source || 'demo_feedback_payment'
+//         });
+
+//         return newUser;
+
+//     } catch (error) {
+//         logger.error('Error creating user:', error);
+
+//         // Handle duplicate key violations
+//         if (error.code === '23505') {
+//             if (error.constraint === 'users_email_key') {
+//                 throw new Error('Email already exists');
+//             } else if (error.constraint === 'users_username_key') {
+//                 throw new Error('Username already exists');
+//             }
+//         }
+
+//         throw error;
+//     }
+// };
+
+
 exports.createUser = async function(userData) {
     try {
         // Validate required fields
-        if (!userData.name) {
-            throw new Error('Name is required');
-        }
-        if (!userData.email) {
-            throw new Error('Email is required');
-        }
-        if (!userData.username) {
-            throw new Error('Username is required');
-        }
-        if (!userData.password) {
-            throw new Error('Password is required');
-        }
-        if (!userData.mobile_number) {
-            throw new Error('Mobile number is required');
-        }
+        if (!userData.name) throw new Error('Name is required');
+        if (!userData.email) throw new Error('Email is required');
+        if (!userData.username) throw new Error('Username is required');
+        if (!userData.password) throw new Error('Password is required');
+        if (!userData.mobile_number) throw new Error('Mobile number is required');
 
-        // ✅ Set default role to 'admin' if not provided
         const role = userData.role || 'admin';
-
-        // Validate role
         const allowedRoles = ['superadmin', 'admin', 'user', 'viewer'];
         if (!allowedRoles.includes(role)) {
             throw new Error('Invalid role. Allowed roles are superadmin, admin, user, and viewer.');
         }
 
-        // Validate registration status
         const allowedStatuses = ['pending', 'approved', 'rejected'];
         const registrationStatus = userData.registration_status || 'pending';
         if (!allowedStatuses.includes(registrationStatus)) {
             throw new Error('Invalid registration status. Allowed statuses are pending, approved, and rejected.');
         }
 
+        // ── Determine plan_status from the actual subscription (if any) ──
+        const STRIPE_TO_PLAN_STATUS = {
+            active: 'active',
+            trialing: 'active',
+            past_due: 'active',
+            incomplete: 'pending',
+            incomplete_expired: 'cancelled',
+            canceled: 'cancelled',
+            unpaid: 'cancelled',
+        };
+
+        let planStatus = 'pending';
+        if (userData.demo_request_id) {
+            try {
+                const subResult = await executeQuery(
+                    `SELECT status FROM subscriptions WHERE booking_id = $1 ORDER BY updated_at DESC LIMIT 1`,
+                    [userData.demo_request_id]
+                );
+                if (subResult.rows.length > 0) {
+                    planStatus = STRIPE_TO_PLAN_STATUS[subResult.rows[0].status] || 'pending';
+                } else {
+                    logger.warn(`No subscriptions row found for booking #${userData.demo_request_id} at registration time — plan_status defaulting to 'pending'.`);
+                }
+            } catch (lookupErr) {
+                logger.warn('Could not look up subscription status at registration time:', lookupErr);
+            }
+        }
+
         // Hash password
         const saltRounds = 10;
         const passwordHash = await bcrypt.hash(userData.password, saltRounds);
 
-        // ✅ Insert user with all fields - role is now properly defined
+        // Insert user
         const result = await executeQuery(
             `
             INSERT INTO users (
@@ -100,7 +472,7 @@ exports.createUser = async function(userData) {
                 userData.name.trim(),
                 userData.email.trim().toLowerCase(),
                 userData.username.trim(),
-                role, // ✅ Now properly defined as 'admin' by default
+                role,
                 passwordHash,
                 false, // is_active: false until approved
                 userData.mobile_number.trim(),
@@ -113,7 +485,7 @@ exports.createUser = async function(userData) {
                 userData.plan_price || null,
                 userData.plan_currency || '$',
                 userData.plan_interval || 'month',
-                'pending', // plan_status
+                planStatus,
                 'completed', // payment_status: payment already done
                 userData.source || 'demo_feedback_payment'
             ]
@@ -121,7 +493,7 @@ exports.createUser = async function(userData) {
 
         const newUser = result.rows[0];
 
-        // Update book_demo with user reference
+        // Update book_demo to reflect registration
         if (userData.demo_request_id) {
             await executeQuery(
                 `UPDATE book_demo
@@ -135,7 +507,6 @@ exports.createUser = async function(userData) {
             logger.info(`Updated demo request ${userData.demo_request_id} with payment status`);
         }
 
-        // ✅ Log registration (using console/logger instead of audit_logs)
         logger.info(`User created successfully: ${userData.email} (ID: ${newUser.id})`, {
             name: userData.name,
             email: userData.email,
@@ -144,6 +515,7 @@ exports.createUser = async function(userData) {
             mobile_number: userData.mobile_number,
             plan_name: userData.plan_name || null,
             plan_price: userData.plan_price || null,
+            plan_status: planStatus,
             demo_request_id: userData.demo_request_id || null,
             registration_status: registrationStatus,
             source: userData.source || 'demo_feedback_payment'
@@ -167,9 +539,8 @@ exports.createUser = async function(userData) {
     }
 };
 
-/**
- * Get active hospitals for registration
- */
+
+
 exports.getRegistrationHospitals = async function() {
     try {
         const result = await executeQuery(`
@@ -205,6 +576,68 @@ exports.getUserById = async function(userId) {
         return null;
     }
 };
+
+
+
+// exports.getSubscriptionByUserId = async (userId) => {
+//     const result = await executeQuery(
+//         `SELECT 
+//             s.id,
+//             s.status,
+//             s.stripe_subscription_id,  
+//             s.current_period_start,
+//             s.current_period_end,
+//             s.cancel_at_period_end,
+//             s.canceled_at,
+//             s.invoice,
+//             sp.subscription_details AS plan_name,
+//             sp.price AS plan_price,
+//             sp.interval AS plan_interval
+//          FROM subscriptions s
+//          JOIN subscription_plans sp ON s.subscription_plans_id = sp.subscription_plan_id
+//          WHERE s.user_id = $1
+//          ORDER BY s.created_at DESC
+//          LIMIT 1`,
+//         [userId]
+//     );
+//     return result.rows[0] || null;
+// };
+
+
+exports.getSubscriptionByUserId = async (userId) => {
+    const result = await executeQuery(
+        `SELECT 
+            s.id,
+            s.status,
+            s.stripe_subscription_id,
+            s.subscription_plans_id,
+            s.hospital_id,
+            s.current_period_start,
+            s.current_period_end,
+            s.cancel_at_period_end,
+            s.canceled_at,
+            s.invoice,
+            sp.subscription_details AS plan_name,
+            sp.price AS plan_price,
+            sp.interval AS plan_interval
+         FROM subscriptions s
+         JOIN subscription_plans sp ON s.subscription_plans_id = sp.subscription_plan_id
+         WHERE s.user_id = $1
+         ORDER BY s.created_at DESC
+         LIMIT 1`,
+        [userId]
+    );
+    return result.rows[0] || null;
+};
+
+exports.getUserById = async (userId) => {
+    const result = await executeQuery(
+        `SELECT id, email, name FROM users WHERE id = $1`,
+        [userId]
+    );
+    return result.rows[0] || null;
+};
+
 
 /**
  * Get user by email

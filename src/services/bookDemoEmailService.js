@@ -1534,6 +1534,9 @@ exports.sendScheduledMeetingNotification = async (data) => {
   const submittedAt = escapeHtml(new Date().toLocaleString());
   const ctaUrl = escapeHtml(env.CURRENT_URL || '#');
 
+
+
+  
   const meetingEndRow = meetingEndFormatted
     ? `
       <tr class="last-details-row">

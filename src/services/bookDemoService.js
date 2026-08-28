@@ -36,9 +36,97 @@ exports.verifyCalendlyWebhook = (payload, signature, webhookSecret) => {
 
 // ─── EXPORTED FUNCTIONS ──────────────────────────────────────────────────────────
 
-/**
- * Create a new demo booking with unique schedule token (7-day expiry)
- */
+// /**
+//  * Create a new demo booking with unique schedule token (7-day expiry)
+//  */
+// exports.createBooking = async (data) => {
+//     const {
+//         fullName,
+//         email,
+//         hospitalName,
+//         hospitalAddress,
+//         hospitalEmail,
+//         hospitalPhone,
+//         notes = null
+//     } = data;
+
+//     try {
+//         // Insert into database with auto-generated schedule_token
+//         const result = await executeQuery(
+//             `INSERT INTO book_demo (
+//                 full_name,
+//                 email,
+//                 hospital_name,
+//                 hospital_address,
+//                 hospital_email,
+//                 hospital_phone,
+//                 notes,
+//                 status,
+//                 schedule_token,
+//                 token_expires_at,
+//                 created_at
+//             )
+//             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, gen_random_uuid(), NOW() + INTERVAL '7 days', NOW())
+//             RETURNING id, created_at, schedule_token, token_expires_at`,
+//             [
+//                 fullName,
+//                 email,
+//                 hospitalName,
+//                 hospitalAddress,
+//                 hospitalEmail,
+//                 hospitalPhone,
+//                 notes || null,
+//                 'new'
+//             ]
+//         );
+
+//         const booking = result.rows[0];
+
+//         // Send emails in background (non-blocking)
+//         const emailPromises = [
+//             BookDemoEmailService.sendSuperAdminNotification({
+//                 fullName,
+//                 email,
+//                 hospitalName,
+//                 hospitalAddress,
+//                 hospitalEmail,
+//                 hospitalPhone,
+//                 notes,
+//                 bookingId: booking.id
+//             }).catch(err => logger.error('SuperAdmin email failed:', err)),
+            
+//             BookDemoEmailService.sendCustomerConfirmation({
+//                 fullName,
+//                 email,
+//                 hospitalName,
+//                 bookingId: booking.id,
+//                 scheduleToken: booking.schedule_token
+//             }).catch(err => logger.error('Customer email failed:', err))
+//         ];
+
+//         // Don't await emails - let them run in background
+//         Promise.allSettled(emailPromises);
+
+//         return {
+//             success: true,
+//             data: {
+//                 id: booking.id,
+//                 status: 'new',
+//                 created_at: booking.created_at,
+//                 schedule_token: booking.schedule_token,
+//                 token_expires_at: booking.token_expires_at,
+//                 ...data
+//             }
+//         };
+
+//     } catch (error) {
+//         logger.error('Error creating demo booking:', error);
+//         throw error;
+//     }
+// };
+
+
+
 exports.createBooking = async (data) => {
     const {
         fullName,
@@ -49,8 +137,22 @@ exports.createBooking = async (data) => {
         hospitalPhone,
         notes = null
     } = data;
-
+ 
     try {
+        // Check if this email already has a booking
+        const existing = await executeQuery(
+            `SELECT id FROM book_demo WHERE email = $1 LIMIT 1`,
+            [email]
+        );
+ 
+        if (existing.rows.length > 0) {
+            return {
+                success: false,
+                alreadyExists: true,
+                error: 'A demo has already been booked with this email address'
+            };
+        }
+ 
         // Insert into database with auto-generated schedule_token
         const result = await executeQuery(
             `INSERT INTO book_demo (
@@ -79,9 +181,9 @@ exports.createBooking = async (data) => {
                 'new'
             ]
         );
-
+ 
         const booking = result.rows[0];
-
+ 
         // Send emails in background (non-blocking)
         const emailPromises = [
             BookDemoEmailService.sendSuperAdminNotification({
@@ -94,7 +196,7 @@ exports.createBooking = async (data) => {
                 notes,
                 bookingId: booking.id
             }).catch(err => logger.error('SuperAdmin email failed:', err)),
-            
+ 
             BookDemoEmailService.sendCustomerConfirmation({
                 fullName,
                 email,
@@ -103,10 +205,10 @@ exports.createBooking = async (data) => {
                 scheduleToken: booking.schedule_token
             }).catch(err => logger.error('Customer email failed:', err))
         ];
-
+ 
         // Don't await emails - let them run in background
         Promise.allSettled(emailPromises);
-
+ 
         return {
             success: true,
             data: {
@@ -118,7 +220,7 @@ exports.createBooking = async (data) => {
                 ...data
             }
         };
-
+ 
     } catch (error) {
         logger.error('Error creating demo booking:', error);
         throw error;
@@ -155,6 +257,25 @@ exports.getBookingByToken = async (token) => {
         return result.rows[0] || null;
     } catch (error) {
         logger.error('Error fetching booking by token:', error);
+        return null;
+    }
+};
+
+
+/**
+ * Check whether a users row already exists for this demo booking.
+ * Used to detect "link already used" — once a user has registered,
+ * the feedback link must never route back into the registration flow.
+ */
+exports.getUserByDemoRequestId = async (bookingId) => {
+    try {
+        const result = await executeQuery(
+            `SELECT id, registration_status FROM users WHERE demo_request_id = $1 LIMIT 1`,
+            [bookingId]
+        );
+        return result.rows[0] || null;
+    } catch (error) {
+        logger.error('Error checking existing user for demo request:', error);
         return null;
     }
 };
@@ -584,33 +705,36 @@ exports.getAllBookings = async () => {
  */
 exports.getBookingById = async (id) => {
     try {
-        const result = await executeQuery(
-            `SELECT 
-                id,
-                full_name,
-                email,
-                hospital_name,
-                hospital_address,
-                hospital_email,
-                hospital_phone,
-                status,
-                payment_status,
-                notes,
-                staff_notes,
-                calendly_event_uri,
-                calendly_invitee_uri,
-                scheduled_at,
-                meeting_url,
-                feedback_sent,
-                feedback_sent_at,
-                feedback_received,
-                feedback_received_at,
-                created_at,
-                updated_at
-            FROM book_demo 
-            WHERE id = $1`,
-            [id]
-        );
+       const result = await executeQuery(
+    `SELECT 
+        id,
+        full_name,
+        email,
+        hospital_name,
+        hospital_address,
+        hospital_email,
+        hospital_phone,
+        status,
+        payment_status,
+        plan_id,
+        plan_price,
+        notes,
+        staff_notes,
+        calendly_event_uri,
+        calendly_invitee_uri,
+        scheduled_at,
+        meeting_url,
+        feedback_sent,
+        feedback_sent_at,
+        feedback_received,
+        feedback_received_at,
+        feedback_token,
+        created_at,
+        updated_at
+    FROM book_demo 
+    WHERE id = $1`,
+    [id]
+);
         return result.rows[0] || null;
     } catch (error) {
         logger.error('Error fetching booking:', error);

@@ -135,55 +135,7 @@ exports.updateUserRole = async function(userId, role) {
     }
 };
 
-// /**
-//  * Assign hospital to user
-//  */
-// exports.assignHospitalToUser = async function(userId, hospitalId) {
-//     try {
-//         // Check if user exists
-//         const userResult = await executeQuery(
-//             `SELECT id FROM users WHERE id = $1`,
-//             [userId]
-//         );
 
-//         if (userResult.rows.length === 0) {
-//             throw new Error('User not found.');
-//         }
-
-//         // Check if hospital exists
-//         const hospitalResult = await executeQuery(
-//             `SELECT id FROM hospitals WHERE id = $1`,
-//             [hospitalId]
-//         );
-
-//         if (hospitalResult.rows.length === 0) {
-//             throw new Error('Hospital not found.');
-//         }
-
-//         // Update hospital assignment
-//         const result = await executeQuery(
-//             `
-//             UPDATE users
-//             SET hospital_id = $1
-//             WHERE id = $2
-//             RETURNING
-//                 id,
-//                 name,
-//                 email,
-//                 username,
-//                 role,
-//                 hospital_id
-//             `,
-//             [hospitalId, userId]
-//         );
-
-//         return result.rows[0];
-
-//     } catch (error) {
-//         logger.error('Error assigning hospital to user:', error);
-//         throw error;
-//     }
-// };
 /**
  * Assign hospital to user — only allowed while registration is
  * pending (or status hasn't been set yet, i.e. NULL).
@@ -577,11 +529,30 @@ exports.getPendingRegistrations = async function() {
 };
 
 
-// /**
-//  * Approve user (superadmin)
-//  */
+// // /**
+// //  * Approve user (superadmin)
+// //  */
+
 // exports.approveUser = async function(userId, approvedBy) {
 //     try {
+//         // ✅ First check if user exists and has a hospital_id
+//         const userCheckResult = await executeQuery(
+//             `SELECT id, hospital_id FROM users WHERE id = $1`,
+//             [userId]
+//         );
+ 
+//         if (userCheckResult.rows.length === 0) {
+//             throw new Error('User not found');
+//         }
+ 
+//         const user = userCheckResult.rows[0];
+ 
+//         // ✅ Check if user has a hospital assigned
+//         if (!user.hospital_id) {
+//             throw new Error('Please assign a hospital to the user account before approving the user.');
+//         }
+ 
+//         // ✅ Proceed with approval
 //         const result = await executeQuery(
 //             `UPDATE users
 //              SET
@@ -594,7 +565,7 @@ exports.getPendingRegistrations = async function() {
 //              RETURNING *`,
 //             [userId, approvedBy]
 //         );
-
+ 
 //         return result.rows[0];
 //     } catch (error) {
 //         logger.error('Error approving user:', error);
@@ -603,28 +574,63 @@ exports.getPendingRegistrations = async function() {
 // };
 
 
-
 exports.approveUser = async function(userId, approvedBy) {
+    // Start a transaction
+    await executeQuery('BEGIN');
+ 
     try {
-        // ✅ First check if user exists and has a hospital_id
-        const userCheckResult = await executeQuery(
-            `SELECT id, hospital_id FROM users WHERE id = $1`,
+        // ─── 1. Get user and demo_request_id ────────────────────────────
+        const userResult = await executeQuery(
+            `SELECT id, demo_request_id, hospital_id, registration_status
+             FROM users
+             WHERE id = $1
+             FOR UPDATE`,  // lock row to prevent concurrent updates
             [userId]
         );
  
-        if (userCheckResult.rows.length === 0) {
+        if (userResult.rows.length === 0) {
             throw new Error('User not found');
         }
  
-        const user = userCheckResult.rows[0];
+        const user = userResult.rows[0];
  
-        // ✅ Check if user has a hospital assigned
-        if (!user.hospital_id) {
-            throw new Error('Please assign a hospital to the user account before approving the user.');
+        // ─── 2. Validate registration status ─────────────────────────────
+        if (user.registration_status !== 'pending') {
+            throw new Error(`User is already ${user.registration_status}`);
         }
  
-        // ✅ Proceed with approval
-        const result = await executeQuery(
+        // ─── 3. Ensure hospital is assigned ──────────────────────────────
+        if (!user.hospital_id) {
+            throw new Error('Please assign a hospital to the user before approving.');
+        }
+ 
+        // ─── 4. Verify subscription exists and is active ────────────────
+        //    Query the actual subscription status, not the stale plan_status on users.
+        const subResult = await executeQuery(
+            `SELECT s.id, s.status
+             FROM subscriptions s
+             WHERE s.booking_id = $1
+             ORDER BY s.created_at DESC
+             LIMIT 1
+             FOR UPDATE`,  // lock the subscription row
+            [user.demo_request_id]
+        );
+ 
+        if (subResult.rows.length === 0) {
+            throw new Error('No subscription found for this user. They may not have completed payment.');
+        }
+ 
+        const subscription = subResult.rows[0];
+        const activeStatuses = ['active', 'trialing', 'past_due']; // past_due still has access? decide
+        if (!activeStatuses.includes(subscription.status)) {
+            throw new Error(
+                `Cannot approve – subscription is not active (status: ${subscription.status}). ` +
+                `User may need to update payment method or contact support.`
+            );
+        }
+ 
+        // ─── 5. Update user ──────────────────────────────────────────────
+        const updateUserResult = await executeQuery(
             `UPDATE users
              SET
                 registration_status = 'approved',
@@ -637,16 +643,43 @@ exports.approveUser = async function(userId, approvedBy) {
             [userId, approvedBy]
         );
  
-        return result.rows[0];
+        const updatedUser = updateUserResult.rows[0];
+ 
+        // ─── 6. Link subscription to user and hospital ──────────────────
+        await executeQuery(
+            `UPDATE subscriptions
+             SET
+                user_id = $1,
+                hospital_id = $2,
+                updated_at = NOW()
+             WHERE id = $3`,
+            [userId, user.hospital_id, subscription.id]
+        );
+ 
+        // ─── 7. (Optional) Update book_demo status ──────────────────────
+        if (user.demo_request_id) {
+            await executeQuery(
+                `UPDATE book_demo
+                 SET status = 'approved', updated_at = NOW()
+                 WHERE id = $1`,
+                [user.demo_request_id]
+            );
+        }
+ 
+        // ─── Commit transaction ──────────────────────────────────────────
+        await executeQuery('COMMIT');
+ 
+        logger.info(`User ${userId} approved by ${approvedBy}, subscription ${subscription.id} linked.`);
+ 
+        return updatedUser;
+ 
     } catch (error) {
+        // ─── Rollback on any error ──────────────────────────────────────
+        await executeQuery('ROLLBACK');
         logger.error('Error approving user:', error);
         throw error;
     }
 };
-
-
-
-
 
 
 /**

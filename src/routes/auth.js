@@ -14,6 +14,9 @@ router.get(
     AuthController.getRegistrationHospitals
 );
  
+router.get('/me/subscription', verifyToken, AuthController.getMySubscription);
+// routes/authRoutes.js
+router.post('/subscription/renew', verifyToken, AuthController.renewSubscription);
 
 // Protected routes
 router.get('/profile', verifyToken, AuthController.getProfile);

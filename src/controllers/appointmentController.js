@@ -559,7 +559,7 @@ exports.getAllAppointments = async (req, res, next) => {
         }
 
         if (status) {
-            paramCount++;
+            paramCount
             query += ` AND a.status = $${paramCount}`;
             params.push(status);
         }
@@ -1045,111 +1045,6 @@ exports.initiateFeedbackCallDirect = async (req, res, next) => {
         next(error);
     }
 };
-
-
-
-
-
-
-
-
-
-
-// /**
-//  * Cron job: Process pending feedback calls (no admin context, runs globally)
-//  */
-
-
-// exports.processPendingFeedbackCalls = async () => {
-//     try {
-//         console.log('🕒 Running feedback call cron job...');
-
-//         const delayMinutes = process.env.FEEDBACK_CALL_DELAY_MINUTES || '2';
-//         console.log(`   Delay (minutes): ${delayMinutes}`);
-
-//         // Build the SQL query as a template literal
-//         const query = `
-//             SELECT
-//                 a.id as appointment_id,
-//                 a.appointment_type,
-//                 a.date,
-//                 a.time,
-//                 a.pet_owner_id,
-//                 a.pet_id,
-//                 a.updated_at,
-//                 po.name as patient_name,
-//                 po.phone,
-//                 p.pet_name as pet_name
-//             FROM ezy_vet_appointments a
-//             JOIN ezy_vet_pet_owner po ON a.pet_owner_id = po.id
-//             LEFT JOIN ezy_vet_pets p ON a.pet_id = p.id
-//             WHERE a.status = 'completed'
-//               AND a.appointment_status = 'completed'
-//               AND (a.feedback_call_attempted IS NULL OR a.feedback_call_attempted = 'false')
-//               AND a.updated_at <= NOW() - INTERVAL '${delayMinutes} minutes'
-//             ORDER BY a.updated_at ASC
-//             LIMIT 10
-//         `;
-
-//         console.log('   SQL:', query);
-//         console.log('   NOW() =', new Date().toISOString());
-
-//         // Execute the query
-//         const [rows] = await db.execute(query);
-//         console.log(`   Rows returned: ${rows.length}`);
-
-//         if (rows.length === 0) {
-//             console.log('   No pending feedback calls to process');
-//             return;
-//         }
-
-//         console.log(`   Found ${rows.length} appointment(s) ready for feedback call`);
-
-//         for (const apt of rows) {
-//             console.log(`\n📞 Processing appointment ID ${apt.appointment_id}`);
-
-//             const updatedAt = new Date(apt.updated_at);
-//             const now = new Date();
-//             const diffMinutes = (now - updatedAt) / (1000 * 60);
-//             if (diffMinutes < 2) {
-//                 console.log(`   ⏳ Gap time (${diffMinutes.toFixed(1)} min) < 2 min, skipping`);
-//                 continue;
-//             }
-//             console.log(`   ✅ Gap time (${diffMinutes.toFixed(1)} min) >= 2 min, initiating call`);
-
-//             const callData = {
-//                 phoneNumber: apt.phone,
-//                 patientName: apt.patient_name,
-//                 petName: apt.pet_name || 'Your pet',
-//                 appointmentType: apt.appointment_type,
-//                 appointmentDate: apt.date,
-//                 appointmentTime: apt.time,
-//                 appointmentId: String(apt.appointment_id)
-//             };
-
-//             try {
-//                 const result = await _triggerOutboundCall(callData);
-//                 if (result.success) {
-//                     await db.execute(`
-//                         UPDATE ezy_vet_appointments
-//                         SET feedback_call_attempted = 'true',
-//                             feedback_call_attempted_at = NOW()
-//                         WHERE id = $1
-//                     `, [apt.appointment_id]);
-//                     console.log(`   ✅ Feedback call initiated successfully for appointment ${apt.appointment_id}`);
-//                 } else {
-//                     console.log(`   ❌ Failed to initiate call: ${result.error}`);
-//                 }
-//             } catch (err) {
-//                 console.error(`   ❌ Error initiating call: ${err.message}`);
-//             }
-//         }
-
-//     } catch (error) {
-//         console.error('Error in processPendingFeedbackCalls:', error);
-//     }
-// };
-
 
 
 

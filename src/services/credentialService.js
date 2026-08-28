@@ -314,65 +314,7 @@ return result;
 // // ==============================
 // // 📥 GET CREDENTIALS (with UPPERCASE keys)
 // // ==============================
-// async function getCredentials(hospitalId) {
-//     if (!hospitalId) {
-//         throw new Error('hospital_id is required');
-//     }
 
-//     const sql = `
-//         SELECT 
-//             hospital_id,
-//             hospital_name,
-//             vapi_api_key,
-//             vapi_assistant_id,
-//             main_vapi_assistant_name,
-//             feedback_vapi_assistant_name,
-//             google_client_id,
-//             google_client_secret,
-//             google_calendar_refresh_token,
-//             google_gmail_refresh_token,
-//             google_calendar_id,
-//             admin_email,
-//             google_email,
-//             default_slot_duration,
-//             max_booking_days,
-//             min_booking_hours,
-//             hospital_api_key,
-//             vapi_api_base_url,
-//             vapi_private_api_key,
-//             vapi_feedback_assistant_id,
-//             vapi_phone_number_id,
-//             feedback_call_delay_minutes,
-//             superadmin_email,
-//             calendly_pat,
-//             ezy_vet_partner_id,
-//             ezy_vet_client_id,
-//             ezy_vet_client_secret,
-//             ezy_vet_grant_type,
-//             ezy_vet_scope,
-//             ezy_vet_site_uid,
-//             created_at,
-//             updated_at
-//         FROM vet_desk_ai_crendatials
-//         WHERE hospital_id = $1
-//     `;
-
-//     const result = await executeQuery(sql, [hospitalId]);
-
-//     if (result.rows.length === 0) {
-//         throw new Error(`No credentials found for hospital_id: ${hospitalId}`);
-//     }
-
-//     const row = result.rows[0];
-
-//     // 🔓 Decrypt sensitive fields (hospital_name / assistant names pass through untouched)
-//     const decryptedData = decryptSensitiveFields(row);
-
-//     // 📤 Convert all keys to UPPERCASE
-//     const dataWithUppercaseKeys = toUpperCaseKeys(decryptedData);
-
-//     return dataWithUppercaseKeys;
-// }
 
 async function getCredentials(hospitalId) {
     if (!hospitalId) {

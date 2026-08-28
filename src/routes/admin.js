@@ -5,7 +5,7 @@ const appointmentController = require('../controllers/appointmentController');
 
 const slotController = require('../controllers/slotController');
 
-
+const superadminController = require('../controllers/superadminController'); 
 const ezyvetController = require('../controllers/ezyvetController');
 
 const animalController = require('../controllers/animalController');
@@ -278,6 +278,9 @@ router.put('/credentials-resources', adminController.updateAdminCredentials);
 router.post('/breeds/search', animalController.searchBreeds);
 
 
-
+router.post(
+    '/activate-user', 
+    superadminController.activateUser
+);
 
 module.exports = router;

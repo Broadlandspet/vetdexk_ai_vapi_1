@@ -96,10 +96,89 @@ function renderErrorPage(title, message, details = '') {
 
 // ─── EXPORTED FUNCTIONS ──────────────────────────────────────────────────────────
 
-/**
- * Create a new booking (public)
- * POST /api/demo
- */
+// /**
+//  * Create a new booking (public)
+//  * POST /api/demo
+//  */
+// exports.createBooking = async (req, res) => {
+//     try {
+//         const {
+//             fullName,
+//             email,
+//             hospitalName,
+//             hospitalAddress,
+//             hospitalEmail,
+//             hospitalPhone,
+//             notes = null
+//         } = req.body;
+
+//         // Validate required fields
+//         if (!fullName || !email || !hospitalName || !hospitalAddress || !hospitalEmail || !hospitalPhone) {
+//             return res.status(400).json({
+//                 success: false,
+//                 error: 'All fields are required'
+//             });
+//         }
+
+//         // Validate email format
+//         const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+//         if (!emailPattern.test(email)) {
+//             return res.status(400).json({
+//                 success: false,
+//                 error: 'Invalid email address'
+//             });
+//         }
+//         if (!emailPattern.test(hospitalEmail)) {
+//             return res.status(400).json({
+//                 success: false,
+//                 error: 'Invalid hospital email address'
+//             });
+//         }
+
+//         // Validate phone
+//         const phonePattern = /^[0-9+\-\s()]{7,20}$/;
+//         if (!phonePattern.test(hospitalPhone)) {
+//             return res.status(400).json({
+//                 success: false,
+//                 error: 'Invalid phone number'
+//             });
+//         }
+
+//         const result = await BookDemoService.createBooking({
+//             fullName,
+//             email,
+//             hospitalName,
+//             hospitalAddress,
+//             hospitalEmail,
+//             hospitalPhone,
+//             notes
+//         });
+
+//         res.json({
+//             success: true,
+//             message: 'Demo request submitted successfully. Please check your email for the meeting booking link.',
+//             data: result.data
+//         });
+
+//     } catch (error) {
+//         logger.error('Error creating booking:', error);
+//         res.status(500).json({
+//             success: false,
+//             error: 'Failed to create booking. Please try again.'
+//         });
+//     }
+// };
+
+
+
+function normalizePhone(phone) {
+    if (!phone) return phone;
+    const trimmed = phone.trim();
+    const hasPlus = trimmed.startsWith('+');
+    const digitsOnly = trimmed.replace(/\D/g, ''); // strip everything but digits
+    return hasPlus ? `+${digitsOnly}` : digitsOnly;
+}
+ 
 exports.createBooking = async (req, res) => {
     try {
         const {
@@ -108,10 +187,11 @@ exports.createBooking = async (req, res) => {
             hospitalName,
             hospitalAddress,
             hospitalEmail,
-            hospitalPhone,
             notes = null
         } = req.body;
-
+ 
+        let { hospitalPhone } = req.body;
+ 
         // Validate required fields
         if (!fullName || !email || !hospitalName || !hospitalAddress || !hospitalEmail || !hospitalPhone) {
             return res.status(400).json({
@@ -119,7 +199,7 @@ exports.createBooking = async (req, res) => {
                 error: 'All fields are required'
             });
         }
-
+ 
         // Validate email format
         const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailPattern.test(email)) {
@@ -134,8 +214,9 @@ exports.createBooking = async (req, res) => {
                 error: 'Invalid hospital email address'
             });
         }
-
-        // Validate phone
+ 
+        // Validate raw phone format first (before normalizing)
+        // Allows digits, +, -, spaces, parens — formatted input like "+1 (555) 759-7861"
         const phonePattern = /^[0-9+\-\s()]{7,20}$/;
         if (!phonePattern.test(hospitalPhone)) {
             return res.status(400).json({
@@ -143,7 +224,27 @@ exports.createBooking = async (req, res) => {
                 error: 'Invalid phone number'
             });
         }
-
+ 
+        // Normalize phone: strip formatting, keep leading + if present
+        hospitalPhone = normalizePhone(hospitalPhone);
+ 
+        // Require a country code (must start with +)
+        if (!hospitalPhone.startsWith('+')) {
+            return res.status(400).json({
+                success: false,
+                error: 'Phone number must include a country code, e.g. +1 555 759 7861'
+            });
+        }
+ 
+        // Sanity check on digit count (country code + number, E.164 max 15 digits)
+        const digitCount = hospitalPhone.replace('+', '').length;
+        if (digitCount < 8 || digitCount > 15) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid phone number'
+            });
+        }
+ 
         const result = await BookDemoService.createBooking({
             fullName,
             email,
@@ -153,13 +254,20 @@ exports.createBooking = async (req, res) => {
             hospitalPhone,
             notes
         });
-
+ 
+        if (!result.success && result.alreadyExists) {
+            return res.status(409).json({
+                success: false,
+                error: result.error
+            });
+        }
+ 
         res.json({
             success: true,
             message: 'Demo request submitted successfully. Please check your email for the meeting booking link.',
             data: result.data
         });
-
+ 
     } catch (error) {
         logger.error('Error creating booking:', error);
         res.status(500).json({

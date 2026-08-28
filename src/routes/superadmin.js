@@ -165,4 +165,44 @@ router.get('/credentials-resources/:hospitalId', verifyToken ,  requireRole(['su
 router.put('/credentials-resources/:hospitalId', verifyToken, requireRole(['superadmin']), superadminController.updateCredentials);
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+router.post(
+    '/deactivate-user',
+    verifyToken,
+    requireRole(['superadmin']),
+    superadminController.deactivateUser
+);
+
+router.post(
+    '/activate-user',
+    verifyToken,
+    requireRole(['superadmin']),
+    superadminController.activateUser
+);
+
+
+
+
 module.exports = router;
+
+
+
+

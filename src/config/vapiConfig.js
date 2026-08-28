@@ -37,5 +37,9 @@ module.exports = {
     // Static tool list attached to every FEEDBACK assistant
     FEEDBACK_ASSISTANT_STATIC_TOOL_IDS: [
         '2c131de6-a9b6-4f18-b243-50f64c74c805'
-    ]
+    ],
+
+
+
+    DEACTIVATED_STATIC_ASSISTANT_ID: '0c574b6a-676f-4316-bd3c-22ab9a0e131d'
 };

@@ -6,6 +6,13 @@ const credentialsResourceService = require('../services/credentialsResourceServi
 
 const credentialService = require('../services/credentialService');  
 
+
+const subscriptionService = require('../services/subscriptionService');
+const vapiService = require('../services/vapiService');
+const { DEACTIVATED_STATIC_ASSISTANT_ID } = require('../config/vapiConfig');
+
+
+
   // Get all users except Super Admin
 exports.getAllUsers=  async (req, res) => {
     try {
@@ -305,64 +312,59 @@ exports.getPendingRegistrations = async (req, res) => {
     }
 };
 
+
+
 exports.approveUser = async (req, res) => {
     try {
         const { id } = req.params;
- 
-        // ✅ First, check if user has a hospital_id
+
         const userCheck = await userService.getUserById(id);
-       
         if (!userCheck) {
             return res.status(404).json({
                 success: false,
                 error: 'User not found'
             });
         }
- 
-        // ✅ If user doesn't have a hospital_id, return error
-        if (!userCheck.hospital_id) {
-            return res.status(400).json({
-                success: false,
-                error: 'Please assign a hospital to the user account before approving the user.'
-            });
-        }
- 
-        const user = await SuperadminService.approveUser(
-            id,
-            req.userId
-        );
- 
+
+        const user = await SuperadminService.approveUser(id, req.userId);
+
         if (!user) {
             return res.status(404).json({
                 success: false,
                 error: 'User not found'
             });
         }
- 
-        // Send approval email to the approved user (non-blocking)
+
         const { sendApprovalEmail } = require('../services/approvalEmailService');
-        sendApprovalEmail({
-            name: user.name,
-            email: user.email
-        }).catch(err => {
+        sendApprovalEmail({ name: user.name, email: user.email }).catch(err => {
             logger.error(`Approval email failed for user ${user.email}: ${err.message}`);
         });
- 
-        res.json({
-            success: true,
-            data: user,
-            message: 'User approved successfully'
-        });
- 
+
+        res.json({ success: true, data: user, message: 'User approved successfully' });
+
     } catch (error) {
         logger.error('Error approving user:', error);
- 
+
+        const knownValidationErrors = [
+            'Please assign a hospital',
+            'already',
+            'No subscription found',
+            'is not active'
+        ];
+        if (error.message && knownValidationErrors.some(fragment => error.message.includes(fragment))) {
+            return res.status(400).json({
+                success: false,
+                error: error.message
+            });
+        }
+
         res.status(500).json({
             success: false,
             error: 'Failed to approve user'
         });
     }
 };
+
 
 
 
@@ -562,14 +564,6 @@ exports.deleteCredentialsResources = async (req, res) => {
 
 
 
-
-
-
-
-
-
-
-
 exports.updateCredentials = async (req, res) => {
      console.log('⚡⚡⚡ updateCredentials controller called!');
     try {
@@ -637,6 +631,7 @@ exports.updateCredentials = async (req, res) => {
 
 // // ==============================
 // // UPDATE VAPI PHONE NUMBER ID (SUPERADMIN ONLY)
+
 // // ==============================
 
 // ==============================
@@ -678,6 +673,158 @@ exports.updateVapiPhoneNumber = async (req, res) => {
         return res.status(500).json({
             success: false,
             message: error.message || 'Failed to update Vapi phone number.'
+        });
+    }
+};
+
+
+
+
+
+
+
+
+
+/**
+ * POST /api/superadmin/deactivate-user
+ * body: { user_id, hospital_id }
+ *
+ * 1. Checks the subscription: if cancel_at_period_end === false, status === 'active',
+ *    and current_period_end has already passed -> ends the subscription
+ *    (cancel_at_period_end = true, status = 'inactive').
+ * 2. On success, relinks the hospital's Vapi phone number to the static
+ *    fallback assistant (0c574b6a-676f-4316-bd3c-22ab9a0e131d).
+ */
+exports.deactivateUser = async (req, res) => {
+    try {
+        const { user_id, hospital_id } = req.body;
+
+        if (!user_id || !hospital_id) {
+            return res.status(400).json({
+                success: false,
+                message: 'user_id and hospital_id are required.'
+            });
+        }
+
+        const subscription = await subscriptionService.getSubscriptionForUserHospital(user_id, hospital_id);
+
+        if (!subscription) {
+            return res.status(404).json({
+                success: false,
+                message: 'No subscription found for this user_id/hospital_id.'
+            });
+        }
+
+        const { current_period_end, cancel_at_period_end, status } = subscription;
+        const now = new Date();
+        const periodHasEnded = current_period_end && new Date(current_period_end) <= now;
+
+        const eligible = cancel_at_period_end === false && status === 'active' && periodHasEnded;
+
+        if (!eligible) {
+            return res.status(400).json({
+                success: false,
+                message: 'Subscription end process failed because the plan subscription time period is still left.',
+                data: {
+                    current_period_end,
+                    cancel_at_period_end,
+                    status,
+                    server_time: now
+                }
+            });
+        }
+
+        const updatedSubscription = await subscriptionService.endSubscription(subscription.id);
+
+        // ── Relink phone number to the static fallback assistant ──
+        let assistantRelinked = false;
+        try {
+            const credentials = await credentialService.getCredentials(hospital_id);
+            const phoneNumberId = credentials.VAPI_PHONE_NUMBER_ID;
+
+            if (phoneNumberId) {
+                await vapiService.linkPhoneNumberToAssistant(phoneNumberId, DEACTIVATED_STATIC_ASSISTANT_ID);
+                assistantRelinked = true;
+            } else {
+                logger.warn(`[deactivate-user] No vapi_phone_number_id stored for hospital ${hospital_id}; skipped Vapi relink.`);
+            }
+        } catch (vapiErr) {
+            // Subscription is already updated in the DB — log but don't fail the whole request
+            logger.error(`[deactivate-user] Failed to relink phone number to static assistant: ${vapiErr.message}`);
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: 'Subscription successfully ended and the db data is updated.',
+            data: {
+                subscription: updatedSubscription,
+                assistant_relinked_to_static: assistantRelinked
+            }
+        });
+
+    } catch (error) {
+        logger.error('Error deactivating user:', error);
+        return res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to deactivate user.'
+        });
+    }
+};
+
+/**
+ * POST /api/superadmin/activate-user
+ * body: { hospital_id, user_id, subscription_plans_id?, ... }
+ *
+ * 1. Updates only the fields present in the body.
+ * 2. If subscription_plans_id is present, current_period_end is auto-computed
+ *    from the plan's interval.
+ * 3. On success, relinks the hospital's Vapi phone number back to its own
+ *    (real) assistant, undoing the static fallback from deactivate-user.
+ */
+exports.activateUser = async (req, res) => {
+    try {
+        const { hospital_id, user_id } = req.body;
+
+        if (!hospital_id || !user_id) {
+            return res.status(400).json({
+                success: false,
+                message: 'hospital_id and user_id are required.'
+            });
+        }
+
+        const updatedSubscription = await subscriptionService.activateSubscription(user_id, hospital_id, req.body);
+
+        // ── Relink phone number back to the hospital's own assistant ──
+        let assistantRelinked = false;
+        try {
+            const credentials = await credentialService.getCredentials(hospital_id);
+            const phoneNumberId = credentials.VAPI_PHONE_NUMBER_ID;
+            const assistantId = credentials.VAPI_ASSISTANT_ID;
+
+            if (phoneNumberId && assistantId) {
+                await vapiService.linkPhoneNumberToAssistant(phoneNumberId, assistantId);
+                assistantRelinked = true;
+            } else {
+                logger.warn(`[activate-user] Missing vapi_phone_number_id or vapi_assistant_id for hospital ${hospital_id}; skipped Vapi relink.`);
+            }
+        } catch (vapiErr) {
+            logger.error(`[activate-user] Failed to relink phone number to original assistant: ${vapiErr.message}`);
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: 'Subscription activated successfully.',
+            data: {
+                subscription: updatedSubscription,
+                assistant_relinked_to_original: assistantRelinked
+            }
+        });
+
+    } catch (error) {
+        logger.error('Error activating user:', error);
+        return res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to activate user.'
         });
     }
 };
